@@ -1,0 +1,225 @@
+# Herald's config: the transport side of every channel between Anze and the machine (moved from
+# ~/.jarvis/config.toml on 2026-10-17, comments kept). What to say and when -- the ping's change gate,
+# interval, quiet hours, weekend rule, meeting guard, snooze, the briefing's cadence and the ladder's
+# `publish-*` / `save-draft` actions -- stays in Jarvis's config; here is only how a message goes out
+# and which sources are polled. Credentials are NOT here: ~/.herald/secrets/ (0600, never git).
+# Each channel's `enabled` is Herald's own master switch (content leaving the machine is opt-in), in
+# addition to Jarvis's: both must be on.
+
+[ping]
+# A push that carries a COUNT and nothing else -- "waiting for you: 2 review
+# item(s), 1 inbound signal(s)". No path, no repo, no job name, no subject line.
+#
+# This does NOT reopen the decision that kept the toast sink local. That
+# decision was about alert *text*, which carries absolute paths and job names.
+# The constraint here is enforced rather than remembered: ping.compose() builds
+# from ints and literals, ping.is_content_free() re-checks the finished string
+# against a whitelisted vocabulary, and send() refuses anything that fails and
+# raises an alert about it. A later edit that interpolates a title fails the
+# check instead of shipping it.
+#
+# Why it earns its place: all three Jarvis tasks run S4U, so `_toast` has failed
+# with "The notification platform is unavailable" since 2026-08-31 and every
+# push-worthy alert is marked `_(toast undelivered - Session 0)_`. Approval
+# latency has been tied to when a file next gets opened.
+enabled = true
+
+# localhost, NOT https://ntfy.unspokenmallard.xyz. ntfy runs on this machine,
+# so the daemon has no reason to leave it: no TLS, no certificate, no DNS, no
+# dependency on Caddy being up. The Caddy site block exists only so a PHONE can
+# reach the same server. Fewer moving parts on the path that must not fail.
+url = "http://127.0.0.1:2586/jarvis"
+# One-tap buttons on each ping (Anze 2026-10-09, 9b): the phone publishes the command to this
+# public URL with the write-only `jarvisbtn` token (secrets/ntfy.json button_token). "" = off.
+buttons_url = "https://ntfy.unspokenmallard.xyz/jarvis-cmd"
+title = "Jarvis"
+
+# The bearer token is deliberately NOT a key here -- this file is committed and
+# swept into git nightly. ping.token() reads secrets/ntfy.json, which
+# .gitignore names explicitly. There is no config path for it, so it cannot be
+# put here by someone doing the obvious thing.
+
+timeout_s = 10
+# Where the Diagnose button opens the HUD, on the incident ("" = no button).
+hud_url = "https://jarvis.unspokenmallard.xyz"
+# min_interval_s, quiet_hours, inbound_on_weekends, inbound_named and meeting_guard are Jarvis's
+# ([ping] in ~/.jarvis/config.toml): whether and when to ping is its decision, not a channel rule.
+
+[reports]
+# The digests, in full, pushed to the phone on their own ntfy topic
+# (daemon/reports.py). Asked for by Anze 2026-09-13. NOT the ping: the ping
+# carries counts and stays that way. A report carries repository names, paths,
+# mail subjects and security findings, so it goes to `jarvis-reports`, which only
+# the phone's ntfy user (jarviscmd) can read and only the daemon's (jarvis) can
+# write, on this machine's own ntfy server -- no third party, no upstream relay.
+# Every push is a `publish-report` action on the ladder, and a report older than
+# its job's max_age_s is held back rather than delivered as new.
+#
+# Read on every run: false here stops the pushes with no restart.
+enabled = true
+base_url = "http://127.0.0.1:2586"
+topic = "jarvis-reports"
+# ntfy's docs call bodies over 4K untested; a longer report goes as parts.
+max_bytes = 3900
+timeout_s = 15
+# Shown on the phone without sound or vibration. The Phase 5 rule was "no
+# interrupting notifications"; the counts ping is still what interrupts.
+priority = "low"
+
+[delivery]
+# Can the phone receive what Jarvis sends? daemon/delivery.py asks ntfy's own
+# log (a `Server stats` line a minute, with the live subscription count) and
+# Caddy's access log (each connection of the app, with its topics, logged when
+# it ends). Added 2026-09-15, after the second silent outage in eight days:
+# every publish succeeded both times -- a server nobody listens to answers 200.
+#
+# Read-only. The `delivery-check` job alerts, the `delivery` incident resolves
+# on evidence, and status.py, the digest, the web view, the report pushes, the
+# checkpoint and the session-start hook all read this same answer. The topics
+# it expects are the [ping] and [reports] ones, read from those sections.
+ntfy_log = '/opt/homebrew/var/log/ntfy/ntfy.log'
+caddy_log = '/opt/homebrew/var/log/caddy/caddy.log'
+# The name the phone connects to. Caddy logs it as each request's host.
+app_host = "ntfy.unspokenmallard.xyz"
+# How long the phone may be out of contact before that is a finding. A gap is
+# not a loss -- the app asks for what it missed on every reconnect -- and on
+# 2026-09-13/14 it held its connection all night, reconnecting about hourly,
+# so two hours without contact is not the phone sleeping.
+alert_after_s = 7200
+# ntfy writes a stats line every minute. Older than this, it is not running or
+# not logging, and the answer is "cannot tell", never "connected".
+stats_max_age_s = 300
+# How far back either log is read, at most. 4 MB was ~21h of caddy.log and
+# ~10 days of ntfy.log on 2026-09-15.
+scan_bytes = 4194304
+
+[briefing]
+# Jarvis telling Anze what came in, in its own voice (daemon/briefing.py). Asked
+# for 2026-10-01: "Jarvis here, a new issue has come to our attention, there
+# seems to be a bug with OAUTH". Every new mail, Mattermost DM or mention and
+# GitHub request is announced once; an urgent one is repeated in every briefing
+# until it is read, with a reminder-only briefing at most every remind_every_s.
+# When a reply is needed, a draft is saved in Gmail Drafts or as a Mattermost
+# draft -- never sent ([[actions]] save-draft, daemon/drafts.py).
+#
+# Content, not counts: NOT the ping, which stays counts-only. Each briefing is a
+# `publish-briefing` action on the ladder, on this machine's own ntfy server.
+# While this is on, the ping stops counting and naming the signals announced
+# here. Same gates as the ping: snooze, quiet hours, weekends.
+#
+# Read on every poll: false here stops it with no restart.
+enabled = true
+base_url = "http://127.0.0.1:2586"
+topic = "jarvis"
+# ntfy priorities: 4 (high) for a new urgent issue, 3 (default) otherwise.
+priority = 3
+urgent_priority = 4
+# remind_every_s, untriaged_after_s and drafts are Jarvis's ([briefing] in ~/.jarvis/config.toml).
+max_bytes = 3900
+timeout_s = 15
+
+[inbound]
+# Read-only pollers for the things waiting on you that are NOT on this machine.
+# Every event source this daemon had before these was local, which is a complete
+# picture of what the daemon is doing and no picture at all of what someone is
+# asking you for.
+#
+# Nothing here writes to the service it polls -- no marking read, no replying,
+# no archiving. A signal clears by disappearing from the source, which happens
+# because you dealt with it there. Tier 0 under the ladder: writes only under
+# ~/.jarvis.
+enabled = true
+
+github_enabled = true
+# Measured on the first live poll, 2026-09-05: /notifications returned **327**
+# rows -- 326 `subscribed` (activity in a watched repo, i.e. news) and 1
+# `author`. Feeding that into a "what needs me" report would have ruined the
+# report on day one, so this is an allowlist of the reasons where GitHub is
+# saying a person asked for you specifically.
+#
+# `author` is the obvious first widening candidate -- a reply on a thread you
+# opened often does need you -- and it is left out because it also fires on
+# every bot and CI comment on every thread you ever opened. Add it deliberately
+# and watch the count, do not add it because this reads quiet.
+github_reasons = ["review_requested", "assign", "mention", "team_mention"]
+
+# IMAP with an app password, not OAuth: OAuth needs three third-party packages,
+# a Google Cloud project and a refresh token to keep alive, and this daemon is
+# stdlib-only everywhere else. The trade is that an app password is a
+# full-mailbox credential where an OAuth token could have been readonly -- see
+# inbound.gmail_credentials() for what mitigates that and what would replace it.
+#
+# Stays false until secrets/gmail.json exists. An enabled source with no
+# credential alerts on every poll, which is how a channel stops being read.
+gmail_enabled = true
+gmail_host = "imap.gmail.com"
+gmail_mailbox = "INBOX"
+# Narrow on purpose, same as github_reasons. Bare UNSEEN makes every unread
+# newsletter something "waiting on you". Gmail's IMAP accepts X-GM-RAW for its
+# own search syntax, e.g.
+#   gmail_search = 'X-GM-RAW "is:unread (is:important OR to:me -category:promotions)"'
+gmail_search = 'X-GM-RAW "is:unread (is:important OR to:me -category:promotions)"'
+gmail_max = 25
+# Asana mail (Anze, 2026-09-29): only "X assigned you a task" is a signal. The
+# "You have unread notifications" digest and every other Asana mail are
+# dropped. Each new task gets its own ping -- "You got a new task in Web
+# Platform it was marked as a critical", or without the last part -- after the
+# brain judges it ([brain] inbound_enabled). Optional secrets/asana.json,
+# {"token": "<Asana personal access token>"}, lets that judgment read the
+# task's description; without it the brain sees the title only.
+
+# Mattermost (Anze, 2026-10-01): direct messages, group messages, and posts that
+# mention him by @username or by one of his mention keys. @channel/@all/@here
+# only with mattermost_broadcast_mentions. A signal clears when the channel is
+# viewed in any client. Token: secrets/mattermost.json, the same personal
+# access token the Mattermost MCP server uses. See daemon/mattermost.py.
+mattermost_enabled = true
+mattermost_url = "https://mattermost.eventregistry.org"
+# "Ignore socials-alerts-critical channel" (Anze, 2026-10-01): ~90 unread bot
+# alerts a day. Channel names, display names or team/channel.
+mattermost_exclude = ["socials-alerts-critical"]
+mattermost_broadcast_mentions = false
+mattermost_max_per_channel = 30
+
+timeout_s = 60
+
+[command]
+# Phone -> daemon, deliberately incapable of granting anything. The four verbs
+# re-run a report, close an incident a human judged to be over, mute the ping,
+# and rebuild the digest. None of them dispatches work, approves a review item,
+# widens a target or edits config, and selftest.py asserts that against a list
+# of granting words.
+#
+# The blast radius is stated rather than assumed: whoever can publish to this
+# topic can make Jarvis tell them counts, close an incident, mute a push and
+# rebuild a report. They cannot make it write code, commit, or spend.
+#
+# On since 2026-09-06. The topic has its own ntfy user (`jarviscmd`) and its own
+# token in secrets/ntfy.json, so the ping credential and the command credential
+# are genuinely separate principals rather than the same token wearing two
+# names. Proven end to end the same day: a `status` published to the topic was
+# polled, executed and acknowledged.
+#
+# `jarviscmd` is also THE PHONE'S login, and the ntfy app holds one login per
+# server -- so it must be able to read every topic the phone subscribes to. It
+# could not read `jarvis`, which silently cut the phone off from the ping from
+# 2026-09-07 (when the app was re-logged-in as jarviscmd) to 2026-09-13: ntfy
+# logged subscribers=0 the whole time. Since 09-13: jarviscmd is read-write on
+# `jarvis-cmd`, READ-ONLY on `jarvis` and `jarvis-reports`; the daemon's
+# `jarvis` user is read-write on `jarvis` and WRITE-ONLY on `jarvis-reports`.
+# Neither may write a topic the other reads commands or pushes from.
+enabled = true
+
+base_url = "http://127.0.0.1:2586"
+# A DIFFERENT topic from the ping's. Publishing rights to "tell me the counts"
+# and to "close an incident" are not the same right, so they are not the same
+# token. command.token() reads `command_token` from secrets/ntfy.json and falls
+# back to the ping's `token`; there is no config key for either.
+topic = "jarvis-cmd"
+
+timeout_s = 15
+max_messages = 20
+# Anything older than this is recorded but not executed. A backlog delivered
+# after an outage should not fire a burst of snoozes.
+max_age_s = 3600
+
