@@ -17,6 +17,9 @@
 	<dict>
 		<key>LANG</key>
 		<string>en_US.UTF-8</string>
+		<!-- launchd hands a bare PATH; the GitHub poller shells out to `gh` (the same PATH as com.jarvis.daemon). -->
+		<key>PATH</key>
+		<string>/Users/anzes/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
 	</dict>
 	<key>StandardOutPath</key>
 	<string>/Users/anzes/.herald/state/logs/server.log</string>

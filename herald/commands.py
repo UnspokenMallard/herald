@@ -195,12 +195,12 @@ def receive(config: Mapping[str, Any] | None = None) -> dict:
     return {"state": "ok" if messages else "empty", "results": [receive_message(m, config) for m in messages]}
 
 
-def claim() -> list[dict]:
-    """Pending commands, marked running, oldest first: `{"id", "verb", "args": [..]}`."""
+def claim(only: int | None = None) -> list[dict]:
+    """Pending commands, marked running, oldest first: `{"id", "verb", "args": [..]}`. `only` claims one."""
     ensure_schema()
     with store.connect() as conn:
-        rows = conn.execute("SELECT id, verb, args FROM commands WHERE outcome = ? ORDER BY received_at, id",
-                            (PENDING,)).fetchall()
+        rows = conn.execute("SELECT id, verb, args FROM commands WHERE outcome = ? AND (? IS NULL OR id = ?) "
+                            "ORDER BY received_at, id", (PENDING, only, only)).fetchall()
         for row in rows:
             conn.execute("UPDATE commands SET outcome = ? WHERE id = ? AND outcome = ?", (RUNNING, row[0], PENDING))
     return [{"id": r[0], "verb": r[1], "args": (r[2] or "").split()} for r in rows]
