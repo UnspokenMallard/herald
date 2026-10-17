@@ -11,12 +11,12 @@ Earliest-useful dates, not deadlines; being late costs nothing (Jarvis keeps run
 
 | When | Step | Waits on |
 |---|---|---|
-| when Sentinel is DONE (its NEXT-PROMPT says so) | build Herald from its DESIGN.md | the previous component's cutover |
+| now (Sentinel is DONE 2026-10-17) | build Herald from its DESIGN.md | the previous component's cutover |
 
 ## A: advance the work
 
 > Build Herald. Read `~/.herald/DESIGN.md`, `~/.jarvis/NEXT-PROMPT.md` (its load-bearing rules),
-> and how Budget was split (`~/.budget/DESIGN.md` "As built", Jarvis commit "Move the spend
+> and how Sentinel was split (`~/.sentinel/DESIGN.md` "As built": `core.notify`'s delivery half, the cooldown/backoff/postpone/`alerts.log`/push path and `alert_delivery`, stays in Jarvis until Herald takes it; Jarvis commits "Move the alert record and incident store into Sentinel"), how Budget was split (`~/.budget/DESIGN.md` "As built", Jarvis commit "Move the spend
 > ledger, ceilings, limits and brake decision into Budget") and Mind (`~/.mind/DESIGN.md`): same
 > layout, same cutover discipline. Work in the main checkouts, not a worktree: the cutover
 > restarts the live daemon (`~/.jarvis/restart.sh` only; the HUD with
