@@ -70,7 +70,7 @@ point), `jobs/` (the two feed scripts), `config.toml`, `tests/test_herald.py` (1
   `/commands`. Python readers (Jarvis, Mind) import the library for the signal table and the phone-state check, as for Budget
   and Sentinel. Writes refuse an `Origin` header and any host but loopback.
 - **Moved with their rows** (copied; the old tables stay in `jarvis.db` until Anze confirms dropping them; backup
-  `~/.jarvis/jarvis.db.bak-herald`): `signals` (40, ids kept) and `commands` (6) into `state/herald.db`. Secrets copied (0600) from
+  `~/.jarvis/jarvis.db.bak-herald`, deleted 2026-10-18): `signals` (40, ids kept) and `commands` (6) into `state/herald.db`. Secrets copied (0600) from
   `~/.jarvis/secrets/` to `~/.herald/secrets/`: ntfy, gmail, mattermost, asana (the Jarvis copies stay until Anze confirms).
   State files `asana-digest.json`, `asana-first-critical.json`, `asana-tasks.json`, `calendar.json` now live in `~/.herald/state/`;
   the HUD (`HERALD` in `hud/lib/util.js`), Mind's attention feed and people sync, `weekly-changes.py` and the ping's meeting
