@@ -63,8 +63,8 @@ from . import mattermost, store
 from .store import log
 
 # source name -> async fetcher. Returns the COMPLETE current set of open
-# signals, or None if it could not fetch. Never a partial list: a partial list
-# is indistinguishable from things having been dealt with, and would clear them.
+# signals, or None if it could not fetch. A list cut short by a limit is returned as a
+# `store.Partial`: a plain partial list is indistinguishable from things having been dealt with.
 Fetcher = Callable[[Mapping[str, Any]], Awaitable["list[dict] | None"]]
 SOURCES: dict[str, Fetcher] = {}
 
@@ -169,7 +169,8 @@ def record(source_name: str, items: list[dict]) -> tuple[int, int]:
     """Upsert the current set and clear anything no longer in it.
 
     Returns `(new, cleared)`. Only ever called with a real fetch result -- see
-    `poll_one`, which refuses to call it on a failure.
+    `poll_one`, which refuses to call it on a failure. A `store.Partial` (a truncated fetch) is
+    upserted but clears nothing: the signals it does not name may simply be past the limit.
     """
     ensure_schema()
     now = time.time()
@@ -210,7 +211,7 @@ def record(source_name: str, items: list[dict]) -> tuple[int, int]:
             "SELECT id, external_id FROM signals WHERE source = ? AND cleared_at IS NULL",
             (source_name,),
         ).fetchall()
-        gone = [r[0] for r in open_rows if r[1] not in seen_ids]
+        gone = [] if isinstance(items, store.Partial) else [r[0] for r in open_rows if r[1] not in seen_ids]
         for signal_id in gone:
             # The message text goes with the signal: nothing reads it once the
             # user has seen it, and the row is kept for 30 days.
@@ -492,7 +493,8 @@ def _gmail_blocking(settings: dict, creds: dict, known: set[str] | None = None) 
         typ, data = conn.search(None, str(settings["gmail_search"]))
         if typ != "OK":
             return None
-        raw_ids = (data[0] or b"").split()[-int(settings["gmail_max"]):]
+        all_ids = (data[0] or b"").split()
+        raw_ids = all_ids[-int(settings["gmail_max"]):]
         items: list[dict] = []
         for raw_id in raw_ids:
             message_num = raw_id.decode("ascii", errors="replace")
@@ -562,7 +564,8 @@ def _gmail_blocking(settings: dict, creds: dict, known: set[str] | None = None) 
                         "where": f"mail from {_display_name(header('From'))}",
                     }
             items.append(item)
-        return items
+        # More matches than gmail_max: the older ones are unlisted, not dealt with.
+        return store.Partial(items) if len(all_ids) > len(raw_ids) else items
     except Exception as exc:  # noqa: BLE001 - any failure is "cannot tell", not "empty"
         log.warning("inbound: gmail poll failed: %s", exc)
         return None
@@ -728,7 +731,12 @@ async def poll_one(name: str, config: Mapping[str, Any] | None = None) -> str:
         # the table: do not touch it. The distinction is in the log.
         return f"{name}: no result (disabled or unavailable)"
     new, cleared = record(name, items)
-    return f"{name}: {len(items)} open, {new} new, {cleared} cleared"
+    line = f"{name}: {len(items)} open, {new} new, {cleared} cleared"
+    if isinstance(items, store.Partial):
+        # Herald never alerts: Jarvis raises `inbound-truncated` when a result line carries this token.
+        log.warning("inbound: %s fetch hit its limit; nothing cleared", name)
+        line += " (inbound-truncated: limit hit, nothing cleared)"
+    return line
 
 
 async def poll_all(config: Mapping[str, Any] | None = None) -> list[str]:

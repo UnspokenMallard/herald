@@ -24,6 +24,11 @@ CONFIG = ROOT / "config.toml"
 SECRETS = ROOT / "secrets"
 log = logging.getLogger("herald")
 
+class Partial(list):
+    """A fetch result known to be incomplete (a page or per-channel limit was hit). It is recorded but
+    must never clear the signals it does not name: `inbound.record` skips the `gone` sweep for it."""
+
+
 _META = "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
 
 

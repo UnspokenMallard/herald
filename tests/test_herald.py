@@ -249,6 +249,12 @@ def test_mattermost_signals_and_drafts():
     assert items[2]["meta"]["channel_type"] == "O" and items[2]["meta"]["where"] == "@luis in General"
     assert items[0]["meta"]["where"] == "DM from @iaroslav" and items[2]["url"] == "https://mm.example/eventregistry/pl/g2"
 
+    # a channel with more unread posts than max_per_channel: the fetch is flagged, the newest are kept
+    capped = mattermost.unread_items(mattermost.Client("https://mm.example", "t", transport=fake_api),
+                                     exclude=["socials-alerts-critical"], max_per_channel=1)
+    assert isinstance(capped, store.Partial) and [i["external_id"] for i in capped] == ["p2", "g2"]
+    assert not isinstance(items, store.Partial)
+
     posted: list = []
 
     def drafts_api(method, url, body, headers):
@@ -325,6 +331,50 @@ def test_inbound_clears_only_on_a_list():
     assert inbound.gmail_credentials() is None  # missing app_password
     with store.connect() as conn:
         conn.execute("DELETE FROM signals")
+
+
+def test_truncated_fetch_clears_nothing():
+    import imaplib
+
+    class FakeImap:
+        def __init__(self, *a, **k): pass
+        def login(self, *a): pass
+        def select(self, *a, **k): pass
+        def logout(self): pass
+        def search(self, *a): return "OK", [b"1 2 3"]
+        def fetch(self, num, what):
+            n = num if isinstance(num, str) else num.decode()
+            raw = f"Message-ID: <m{n}@x>\r\nFrom: a@b.c\r\nSubject: s{n}\r\n\r\nbody".encode()
+            return "OK", [(b"", raw)]
+
+    real = imaplib.IMAP4_SSL
+    imaplib.IMAP4_SSL = FakeImap
+    try:
+        settings = {"gmail_host": "h", "gmail_mailbox": "INBOX", "gmail_search": "UNSEEN", "timeout_s": 5}
+        creds = {"user": "u", "app_password": "p"}
+        capped = inbound._gmail_blocking({**settings, "gmail_max": 2}, creds)
+        whole = inbound._gmail_blocking({**settings, "gmail_max": 5}, creds)
+    finally:
+        imaplib.IMAP4_SSL = real
+    assert isinstance(capped, store.Partial) and len(capped) == 2
+    assert not isinstance(whole, store.Partial) and len(whole) == 3
+
+    async def partial_source(config):
+        return capped
+
+    real_source = inbound.SOURCES.get("gmail")
+    try:
+        inbound.record("gmail", whole)
+        assert len(inbound.waiting("gmail")) == 3
+        inbound.SOURCES["gmail"] = partial_source
+        line = asyncio.run(inbound.poll_one("gmail", {}))
+        assert "inbound-truncated" in line and "0 cleared" in line
+        assert len(inbound.waiting("gmail")) == 3  # the older unread mail is past the limit, not dealt with
+        assert inbound.record("gmail", list(capped)) == (0, 1)  # a complete list still clears
+    finally:
+        inbound.SOURCES["gmail"] = real_source
+        with store.connect() as conn:
+            conn.execute("DELETE FROM signals")
 
 
 def test_inbound_judgement_columns():

@@ -154,7 +154,7 @@ def _excluded(channel: Mapping[str, Any], team: str, exclude: set[str]) -> bool:
 
 def unread_items(mm: Client, exclude: list[str] | None = None, broadcast: bool = False,
                  max_per_channel: int = 30) -> list[dict]:
-    """The complete current set of signals. Raises on any failure -- the caller
+    """The complete current set of signals (a `store.Partial` when max_per_channel cut some). Raises on any failure -- the caller
     turns that into None."""
     me = mm.get("/users/me")
     teams = mm.get("/users/me/teams") or []
@@ -173,6 +173,7 @@ def unread_items(mm: Client, exclude: list[str] | None = None, broadcast: bool =
     pattern = mention_pattern(me, broadcast)
 
     found: list[tuple[dict, dict]] = []
+    truncated = False
     for channel in channels.values():
         member = members.get(channel["id"])
         if member is None:
@@ -196,6 +197,7 @@ def unread_items(mm: Client, exclude: list[str] | None = None, broadcast: bool =
         if not direct:
             posts = [p for p in posts if pattern.search(str(p.get("message") or ""))]
         posts.sort(key=lambda p: int(p["create_at"]))
+        truncated = truncated or len(posts) > max_per_channel
         found += [(channel, p) for p in posts[-max_per_channel:]]
 
     if not found:
@@ -233,7 +235,8 @@ def unread_items(mm: Client, exclude: list[str] | None = None, broadcast: bool =
                 "sender": sender,
             },
         })
-    return items
+    # Older unread posts past max_per_channel are unlisted, not dealt with: flag it so nothing clears.
+    return store.Partial(items) if truncated else items
 
 
 def existing_draft(mm: Client, team_id: str, channel_id: str, root_id: str) -> bool:
