@@ -5,7 +5,7 @@
   inbound [poll|waiting]      the table; `poll` runs every source once (exit 0); `waiting` exits 1 if any
   commands [recent]           the command channel's last rows
   ping-test [--send]          what a ping would say now, whether it passes the content-free check
-  asana-digest | calendar-sync   the two feed jobs (Jarvis schedules them through bin/herald-job.sh)
+  asana-digest | calendar-sync | ticktick-tasks   the feed jobs (Jarvis schedules them through bin/herald-job.sh)
 """
 from __future__ import annotations
 
@@ -58,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
         if "--send" in rest:
             print(f"delivered: {ping.send(text)}")
         return 0
-    if cmd in ("asana-digest", "calendar-sync"):
+    if cmd in ("asana-digest", "calendar-sync", "ticktick-tasks"):
         sys.argv = [cmd + ".py", *rest]
         runpy.run_path(str(JOBS / f"{cmd}.py"), run_name="__main__")
         return 0

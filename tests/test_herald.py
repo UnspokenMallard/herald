@@ -532,6 +532,23 @@ def test_cli_exit_codes():
     assert out.returncode == 0 and "safe     : True" in out.stdout, out.stderr
 
 
+def test_ticktick_tasks_reads_three_projects_and_never_writes():
+    import runpy
+    job = runpy.run_path(str(ROOT / "jobs" / "ticktick-tasks.py"), run_name="job")
+    calls = []
+
+    def fake_get(route, token):
+        calls.append(route)
+        if route == "/project":
+            return [{"id": "w", "name": "\U0001f4bcWork"}, {"id": "l", "name": "Learning"}, {"id": "c", "name": "Work", "closed": True}]
+        return {"tasks": [{"id": "t1", "title": "a", "status": 0, "priority": 5}, {"id": "t2", "title": "done", "status": 2}]}
+
+    job["collect"].__globals__["get"] = fake_get
+    rows = job["collect"]("tok")
+    assert [r["id"] for r in rows] == ["t1"] and rows[0]["project"] == "work" and rows[0]["priority"] == 5
+    assert calls == ["/project", "/project/w/data"]  # Learning and the closed project are never read
+
+
 if __name__ == "__main__":
     failed = 0
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
