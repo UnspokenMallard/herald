@@ -23,9 +23,8 @@ covers these rows too. The rule stays: this component measures or knows; Jarvis 
 
 - **A08 (Phase 0, Jarvis side)** Ping repeats an unchanged state (135 pings in 14 days, 20 on 10-20).
   The fix is in Jarvis's ping; if it needs a "last delivered state" from here, add it read-only.
-- **A21 (Phase 2)** The calendar is empty: `calendar.json` has 0 events and 0 feeds, no secret.
-  Anze picks the iCal secret address or the Google Calendar API read-only (D8).
-- **A22 (Phase 2)** Pre-meeting brief, after A21 and a clean week of events.
+- **A21, A22: dropped 2026-10-21 (D8).** Anze chose no calendar: `calendar.json` stays empty,
+  `meeting_guard` stays off, no pre-meeting briefs. Do not rebuild them without a new decision.
 - **A23 (Phase 2)** Inbound: Jarvis has no consumer for `inbound-truncated`; every signal clears as
   "gone" and there is no "answered" clear; 16 of 36 Gmail signals were never judged; no deadline
   watcher for Asana (96 open tasks) or TickTick (16 items).
@@ -33,8 +32,7 @@ covers these rows too. The rule stays: this component measures or knows; Jarvis 
 
 | When (earliest useful, not a deadline) | Step | Waits on |
 |---|---|---|
-| now, Anze | D8: calendar source | Anze |
-| with Phase 2 | A23, then A21/A22 once the calendar has events, then A28 | Phase 2 approval |
+| with Phase 2 | A23, then A28 | Phase 2 approval |
 
 ## A: advance the work
 
