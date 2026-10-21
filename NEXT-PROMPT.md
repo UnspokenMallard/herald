@@ -14,6 +14,28 @@ Earliest-useful dates, not deadlines; being late costs nothing.
 | after that check, Anze | drop `signals` and `commands` from `~/.jarvis/jarvis.db`, delete `jarvis.db.bak-herald`, and delete the old copies `~/.jarvis/secrets/{ntfy,gmail,mattermost,asana}.json` (Herald has its own, 0600) | Anze's confirmation |
 | Anze's call, later | calendar secret addresses into `~/.herald/secrets/calendar.json` (still waiting from before the build), then `[ping] meeting_guard = true` in Jarvis's config | Anze; the work account may have it disabled |
 
+## Audit 2026-10-21: your items
+
+From the Jarvis audit (HUD task audit-jarvis-and-all-its-com-e5a9). The evidence, effort, risk and
+done-criteria of each item are in `~/.jarvis/AUDIT-2026-10-21.md`; the phases and Anze's decisions
+are in `~/.jarvis/NEXT-PROMPT.md`. Build an item only after Anze approves its phase. Prompt A below
+covers these rows too. The rule stays: this component measures or knows; Jarvis alerts and acts.
+
+- **A08 (Phase 0, Jarvis side)** Ping repeats an unchanged state (135 pings in 14 days, 20 on 10-20).
+  The fix is in Jarvis's ping; if it needs a "last delivered state" from here, add it read-only.
+- **A21 (Phase 2)** The calendar is empty: `calendar.json` has 0 events and 0 feeds, no secret.
+  Anze picks the iCal secret address or the Google Calendar API read-only (D8).
+- **A22 (Phase 2)** Pre-meeting brief, after A21 and a clean week of events.
+- **A23 (Phase 2)** Inbound: Jarvis has no consumer for `inbound-truncated`; every signal clears as
+  "gone" and there is no "answered" clear; 16 of 36 Gmail signals were never judged; no deadline
+  watcher for Asana (96 open tasks) or TickTick (16 items).
+- **A28 (Phase 2, last)** `deliver()` app inbox (proactive design step 10), after A08 and A26.
+
+| When (earliest useful, not a deadline) | Step | Waits on |
+|---|---|---|
+| now, Anze | D8: calendar source | Anze |
+| with Phase 2 | A23, then A21/A22 once the calendar has events, then A28 | Phase 2 approval |
+
 ## A: advance the work
 
 > Read `~/.herald/DESIGN.md` ("As built") and this file. Do the first row whose date has passed and report.
