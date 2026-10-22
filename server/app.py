@@ -62,14 +62,14 @@ def sync_post(fn):
 
 def do_ping(b: dict) -> dict:
     text = ping.compose_payload(b)
-    out = ping.send(text, incident_id=b.get("incident_id"), retry_triage=b.get("retry_triage"))
+    out = ping.send(text, incident_id=b.get("incident_id"), retry_triage=b.get("retry_triage"), kind=ping.kind_of(b))
     return {**out, "body": text}
 
 
 def do_ping_hud(b: dict) -> dict:
     text = ping.compose_hud(int(b.get("waiting") or 0), int(b.get("done") or 0), int(b.get("open") or 0),
                             [str(i) for i in b.get("items") or []])
-    return {**ping.send_hud(text, str(b.get("click") or "")), "body": text}
+    return {**ping.send_hud(text, str(b.get("click") or ""), kind=ping.kind_of({**b, "kind": "hud"})), "body": text}
 
 
 def do_report(b: dict) -> dict:

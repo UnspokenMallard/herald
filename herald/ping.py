@@ -376,8 +376,24 @@ def check(text: str) -> bool:
     return is_content_free(text) or is_task_ping(text) or is_named_ping(text)
 
 
+# ntfy headers per ping kind (2026-10-22). Priority 2 for routine counts, 4 for incidents and health,
+# 3 otherwise. X-Sequence-ID only where a new ping replaces the old one in place: counts, never incidents.
+_PRIORITY = {"counts": 2, "hud-done": 2, "incident": 4, "health": 4}
+_SEQUENCE = {"counts": "herald-counts"}
+
+
+def kind_of(body: Mapping[str, Any]) -> str:
+    """The header kind of a `compose_payload` request: a counts ping with incidents is an incident ping."""
+    kind = str(body.get("kind") or "")
+    if kind == "counts" and int((body.get("counts") or {}).get("incidents") or 0):
+        return "incident"
+    if kind == "hud" and not int(body.get("waiting") or 0) and not int(body.get("open") or 0):
+        return "hud-done"
+    return kind
+
+
 def send(text: str, config: Mapping[str, Any] | None = None, incident_id: int | None = None,
-         retry_triage: int | None = None) -> dict:
+         retry_triage: int | None = None, kind: str = "") -> dict:
     """POST the body. Returns `{"delivered": bool, "reason": str}`; never raises.
 
     A body that fails `check` is refused, not sanitised: a ping that quietly strips the leak is a ping
@@ -391,16 +407,18 @@ def send(text: str, config: Mapping[str, Any] | None = None, incident_id: int | 
         log.warning("ping: refusing to send a body that is not content-free: %r", text[:80])
         return {"delivered": False, "reason": "not content-free"}
 
-    return _publish(settings, text, buttons(settings, incident_id, retry_triage))
+    return _publish(settings, text, buttons(settings, incident_id, retry_triage), kind=kind)
 
 
 def _publish(settings: Mapping[str, Any], text: str, actions: str = "",
-             extra: Mapping[str, str] | None = None) -> dict:
+             extra: Mapping[str, str] | None = None, kind: str = "") -> dict:
     request = urllib.request.Request(
         str(settings["url"]),
         data=text.encode("utf-8"),
         method="POST",
-        headers={"Title": str(settings["title"]), "Content-Type": "text/plain", **(extra or {})},
+        headers={"Title": str(settings["title"]), "Content-Type": "text/plain",
+                 "Priority": str(_PRIORITY.get(kind, 3)),
+                 **({"X-Sequence-ID": _SEQUENCE[kind]} if kind in _SEQUENCE else {}), **(extra or {})},
     )
     bearer = token()
     if bearer:
@@ -453,14 +471,14 @@ def is_named_body(text: str) -> bool:
             and all(_NAMED_LINE.match(line) for line in rest))
 
 
-def send_hud(text: str, click: str = "", config: Mapping[str, Any] | None = None) -> dict:
+def send_hud(text: str, click: str = "", config: Mapping[str, Any] | None = None, kind: str = "hud") -> dict:
     settings = cfg(config)
     if not settings["enabled"] or not settings["url"]:
         return {"delivered": False, "reason": "ping disabled"}
     if not is_named_body(text):
         log.warning("ping: refusing a HUD body that is not content-free: %r", text[:80])
         return {"delivered": False, "reason": "not content-free"}
-    return _publish(settings, text, extra={"Tags": "computer", **({"Click": click} if click.startswith("https://") else {})})
+    return _publish(settings, text, extra={"Tags": "computer", **({"Click": click} if click.startswith("https://") else {})}, kind=kind)
 
 
 def compose_payload(body: Mapping[str, Any]) -> str:

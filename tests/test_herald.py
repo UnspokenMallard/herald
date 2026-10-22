@@ -113,6 +113,37 @@ def test_compose_payload_and_send():
         ping.urllib.request.urlopen = real
 
 
+def test_ping_headers_per_kind():
+    sent: list = []
+    real = ping.urllib.request.urlopen
+    ping.urllib.request.urlopen = fake_net(sent)
+    try:
+        cfg = dict(CFG)
+        zero = {"review": 0, "inbound": 0, "incidents": 0, "refused": 0}
+        cases = [
+            ({"kind": "counts", "counts": {**zero, "inbound": 1}}, "2", "herald-counts"),
+            ({"kind": "counts", "counts": {**zero, "incidents": 1}}, "4", None),
+            ({"kind": "health", "failed": 2}, "4", None),
+            ({"kind": "task", "project": "Web Platform", "critical": None}, "3", None),
+        ]
+        for body, prio, sid in cases:
+            sent.clear()
+            assert ping.send(ping.compose_payload(body), cfg, kind=ping.kind_of(body))["delivered"]
+            headers = {k.lower(): v for k, v in sent[0][1].items()}
+            assert headers["priority"] == prio and headers.get("x-sequence-id") == sid, body
+        for body, prio in [({"waiting": 0, "done": 1, "open": 0}, "2"), ({"waiting": 1, "done": 0, "open": 0}, "3")]:
+            sent.clear()
+            text = ping.compose_hud(body["waiting"], body["done"], body["open"])
+            assert ping.send_hud(text, "", cfg, kind=ping.kind_of({**body, "kind": "hud"}))["delivered"]
+            headers = {k.lower(): v for k, v in sent[0][1].items()}
+            assert headers["priority"] == prio and "x-sequence-id" not in headers
+        sent.clear()
+        assert ping.send("Jarvis here. Nothing is waiting for you.", cfg)["delivered"]  # unknown kind: default 3
+        assert {k.lower(): v for k, v in sent[0][1].items()}["priority"] == "3"
+    finally:
+        ping.urllib.request.urlopen = real
+
+
 def test_buttons():
     (TMP / "secrets").mkdir(exist_ok=True)
     (TMP / "secrets" / "ntfy.json").write_text(json.dumps({"token": "t0", "button_token": "b0", "command_token": "c0"}))
