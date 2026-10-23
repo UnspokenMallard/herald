@@ -105,6 +105,8 @@ _WORDS = {
     "my", "found", "a", "new", "task", "marked", "as", "critical",
     # The openers below (2026-10-05, "not always 'Jarvis here'").
     "quick", "update", "from", "heads", "up", "checking", "in", "hello", "it", "hi",
+    # Hermod, Herald's display name (2026-10-23): a fixed literal, like "jarvis".
+    "hermod",
 }
 
 # How Jarvis opens a message (Anze, 2026-10-05: "add some minor randomness").
@@ -117,6 +119,9 @@ OPENERS = (
     "Hi, Jarvis here",
     "Quick update from Jarvis",
     "Heads up from Jarvis",
+    "Hermod here for Jarvis",
+    "Quick update from Hermod",
+    "Heads up from Hermod",
 )
 _pick = random.choice
 
