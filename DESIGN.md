@@ -115,3 +115,5 @@ up across rows with the same (source, external_id); a failed create releases the
 a duplicate. Needs the TickTick MCP token (`~/.config/ticktick-mcp/credentials.json`; a 401 means re-authenticate). A message
 Anze reads in Mattermost before the poll never becomes a signal (`mattermost.unread_items` only lists unread), so it gets no task.
 After merging: restart `com.herald.server` (`bin/install-launchd`) so `/task` exists.
+
+Only a message that names Anze makes a task (`tasks.addressed`, enforced in Herald): a 1:1 DM, a mention, or mail with his address in To (`meta.to`). Group messages, Cc and list mail get none.

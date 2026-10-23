@@ -567,6 +567,7 @@ def _gmail_blocking(settings: dict, creds: dict, known: set[str] | None = None) 
                         "references": " ".join(str(whole.get("References", "")).split()),
                         "reply_to": header("Reply-To", whole) or header("From"),
                         "subject": header("Subject"),
+                        "to": header("To", whole),  # who it was addressed to: only a direct To makes a task
                         "where": f"mail from {_display_name(header('From'))}",
                     }
             items.append(item)

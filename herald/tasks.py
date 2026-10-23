@@ -53,6 +53,23 @@ def content(row: Mapping[str, Any], note: str) -> str:
     return "\n".join(lines)
 
 
+def addressed(row: Mapping[str, Any]) -> str:
+    """"" when the message is addressed to Anze, else why not. Only a message that names him makes a task
+    (Anze, 2026-10-23): a DM, a post that mentions him (the poller already keeps only those in channels), or
+    mail with his address in To. A group message, mail he is only copied on or a list, and every other
+    signal kind, get none, whatever the triage thought."""
+    meta = json.loads(row["meta"]) if row["meta"] else {}
+    kind = row["kind"]
+    if kind == "mattermost-mention" or (kind == "mattermost-dm" and meta.get("channel_type") == "D"):
+        return ""
+    if kind == "mail":
+        mine = str((store.secret("gmail") or {}).get("user") or "").lower()
+        if mine and mine in str(meta.get("to") or "").lower():
+            return ""
+        return "not addressed to Anze (his address is not in To)"
+    return f"{kind or 'this signal'} is not addressed to Anze"
+
+
 def _post(settings: Mapping[str, Any], payload: dict) -> str:
     token = json.loads(CREDS.read_text(encoding="utf-8")).get("access_token")
     if not token:
@@ -75,12 +92,15 @@ def create(signal_id: int, title: str, note: str = "", config: Mapping[str, Any]
     inbound.ensure_schema()
     with store.connect() as conn:
         row = conn.execute(
-            "SELECT id, source, external_id, actor, url, meta, external_ts, first_seen FROM signals WHERE id = ?",
+            "SELECT id, source, external_id, actor, url, meta, external_ts, first_seen, kind FROM signals WHERE id = ?",
             (int(signal_id),)).fetchone()
         if row is None:
             return {"created": False, "task_id": None, "reason": "no such signal"}
-        keys = ("id", "source", "external_id", "actor", "url", "meta", "external_ts", "first_seen")
+        keys = ("id", "source", "external_id", "actor", "url", "meta", "external_ts", "first_seen", "kind")
         row = dict(zip(keys, row))
+        why = addressed(row)
+        if why:
+            return {"created": False, "task_id": None, "reason": why}
         done = conn.execute(
             "SELECT task_id FROM signals WHERE source = ? AND external_id = ? AND task_id IS NOT NULL LIMIT 1",
             (row["source"], row["external_id"])).fetchone()

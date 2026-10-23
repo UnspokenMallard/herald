@@ -582,7 +582,7 @@ def test_ticktick_tasks_reads_three_projects_and_never_writes():
 
 def test_task_creation_is_once_per_message():
     inbound.record("mattermost", [{"external_id": "p1", "kind": "mattermost-dm", "title": "x", "url": "https://mm/pl/p1",
-                                   "actor": "@erik", "body": "link is broken", "meta": {"where": "DM from @erik"}}])
+                                   "actor": "@erik", "body": "link is broken", "meta": {"where": "DM from @erik", "channel_type": "D"}}])
     sid = inbound.open_rows()[-1]["id"]
     on = {"tasks": {"enabled": True, "project_id": "proj"}}
     sent = []
@@ -603,7 +603,7 @@ def test_task_creation_is_once_per_message():
         assert row["task_title"] == "Fix link"
         assert "I added a task: Fix link." in briefing._line([dict(row, headline="Erik reports a broken link", draft=None)])
         # a failed create releases the claim, so the next pass retries
-        inbound.record("mattermost", [{"external_id": "p2", "kind": "mattermost-dm", "title": "y", "url": "", "actor": "@e", "body": "b"}])
+        inbound.record("mattermost", [{"external_id": "p2", "kind": "mattermost-dm", "title": "y", "url": "", "actor": "@e", "body": "b", "meta": {"channel_type": "D"}}])
         sid2 = inbound.open_rows()[-1]["id"]
         tasks._post = lambda s, p: (_ for _ in ()).throw(OSError("net down"))
         assert tasks.create(sid2, "T", "", on)["created"] is False
@@ -611,9 +611,25 @@ def test_task_creation_is_once_per_message():
         assert tasks.create(sid2, "T", "", on)["created"] is True and len(sent) == 2
         # the same message on a new row (cleared and back) gets no second task
         inbound.record("mattermost", [])
-        inbound.record("mattermost", [{"external_id": "p1", "kind": "mattermost-dm", "title": "x", "url": "", "actor": "@erik"}])
+        inbound.record("mattermost", [{"external_id": "p1", "kind": "mattermost-dm", "title": "x", "url": "", "actor": "@erik", "meta": {"channel_type": "D"}}])
         sid3 = inbound.open_rows()[-1]["id"]
         assert tasks.create(sid3, "Fix link", "", on)["task_id"] == "t1" and len(sent) == 2
+        # only a message that names Anze makes a task
+        (store.SECRETS / "gmail.json").parent.mkdir(parents=True, exist_ok=True)
+        (store.SECRETS / "gmail.json").write_text(json.dumps({"user": "anze@er.org", "app_password": "x"}))
+        inbound.record("mattermost", [
+            {"external_id": "g1", "kind": "mattermost-dm", "title": "g", "meta": {"channel_type": "G"}},
+            {"external_id": "m1", "kind": "mattermost-mention", "title": "m", "meta": {"channel_type": "O"}}])
+        inbound.record("gmail", [
+            {"external_id": "<a>", "kind": "mail", "title": "a", "meta": {"to": "Anze <anze@er.org>"}},
+            {"external_id": "<b>", "kind": "mail", "title": "b", "meta": {"to": "list@er.org", "subject": "s"}},
+            {"external_id": "<c>", "kind": "mail", "title": "c"},
+            {"external_id": "gh", "kind": "review_requested", "title": "d"}])
+        ids = {r["title"]: r["id"] for r in inbound.open_rows()}
+        before = len(sent)
+        results = {t: tasks.create(ids[t], "T " + t, "", on)["created"] for t in "g m a b c d".split()}
+        assert results == {"g": False, "m": True, "a": True, "b": False, "c": False, "d": False}, results
+        assert len(sent) == before + 2
         try:
             inbound.update([sid], task_id="x")
             raise AssertionError("task_id is Herald's, not a judgement column")
