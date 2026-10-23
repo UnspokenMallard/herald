@@ -105,3 +105,13 @@ point), `jobs/` (the two feed scripts), `config.toml`, `tests/test_herald.py` (1
     moving it would make Herald import Jarvis. It reads the signal table and the phone state from Herald's library.
   - `scripts/hud-ping.py` stays in Jarvis as the gate (snooze, quiet hours) in front of `/ping/hud`; the HUD still calls it.
   - Not moved: `reminders.py`, `usertasks.py` (they decide what to say), the briefing schedule, the ladder.
+
+## TickTick tasks from actionable messages (2026-10-23)
+
+`herald/tasks.py`, `POST /task {signal_id, title, note}`, `[tasks]` in config.toml. Jarvis's triage judges a Mattermost DM/mention
+or work mail `actionable` (one more field in the same Haiku verdict) and asks for the task; Herald creates it in the Work list
+and the next briefing line says "I added a task: ...". Create only. Dedup: `signals.task_id` is claimed before the call and looked
+up across rows with the same (source, external_id); a failed create releases the claim, a crash between leaves a lost task, never
+a duplicate. Needs the TickTick MCP token (`~/.config/ticktick-mcp/credentials.json`; a 401 means re-authenticate). A message
+Anze reads in Mattermost before the poll never becomes a signal (`mattermost.unread_items` only lists unread), so it gets no task.
+After merging: restart `com.herald.server` (`bin/install-launchd`) so `/task` exists.
