@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "server"))
 
-from herald import briefing, commands, delivery, drafts, inbound, mattermost, ping, reports, store  # noqa: E402
+from herald import briefing, commands, delivery, drafts, inbound, mattermost, ping, reports, store, tasks  # noqa: E402
 
 ping._pick = lambda options: options[0]  # "Jarvis here": the opener is random in production
 
@@ -578,6 +578,50 @@ def test_ticktick_tasks_reads_three_projects_and_never_writes():
     rows = job["collect"]("tok")
     assert [r["id"] for r in rows] == ["t1"] and rows[0]["project"] == "work" and rows[0]["priority"] == 5
     assert calls == ["/project", "/project/w/data"]  # Learning and the closed project are never read
+
+
+def test_task_creation_is_once_per_message():
+    inbound.record("mattermost", [{"external_id": "p1", "kind": "mattermost-dm", "title": "x", "url": "https://mm/pl/p1",
+                                   "actor": "@erik", "body": "link is broken", "meta": {"where": "DM from @erik"}}])
+    sid = inbound.open_rows()[-1]["id"]
+    on = {"tasks": {"enabled": True, "project_id": "proj"}}
+    sent = []
+
+    def post(settings, payload):
+        sent.append(payload)
+        return "t1"
+    real, tasks._post = tasks._post, post
+    try:
+        assert tasks.create(sid, "Fix link", "docs link is empty", {}) ["created"] is False  # off by default
+        got = tasks.create(sid, "Fix  link ", "docs link is empty", on)
+        assert got == {"created": True, "task_id": "t1", "reason": ""}
+        assert sent[0]["projectId"] == "proj" and sent[0]["title"] == "Fix link"
+        assert "From @erik, DM from @erik" in sent[0]["content"] and "https://mm/pl/p1" in sent[0]["content"]
+        again = tasks.create(sid, "Fix link", "", on)
+        assert again["created"] is False and again["task_id"] == "t1" and len(sent) == 1
+        row = inbound.open_rows()[-1]
+        assert row["task_title"] == "Fix link"
+        assert "I added a task: Fix link." in briefing._line([dict(row, headline="Erik reports a broken link", draft=None)])
+        # a failed create releases the claim, so the next pass retries
+        inbound.record("mattermost", [{"external_id": "p2", "kind": "mattermost-dm", "title": "y", "url": "", "actor": "@e", "body": "b"}])
+        sid2 = inbound.open_rows()[-1]["id"]
+        tasks._post = lambda s, p: (_ for _ in ()).throw(OSError("net down"))
+        assert tasks.create(sid2, "T", "", on)["created"] is False
+        tasks._post = post
+        assert tasks.create(sid2, "T", "", on)["created"] is True and len(sent) == 2
+        # the same message on a new row (cleared and back) gets no second task
+        inbound.record("mattermost", [])
+        inbound.record("mattermost", [{"external_id": "p1", "kind": "mattermost-dm", "title": "x", "url": "", "actor": "@erik"}])
+        sid3 = inbound.open_rows()[-1]["id"]
+        assert tasks.create(sid3, "Fix link", "", on)["task_id"] == "t1" and len(sent) == 2
+        try:
+            inbound.update([sid], task_id="x")
+            raise AssertionError("task_id is Herald's, not a judgement column")
+        except ValueError:
+            pass
+    finally:
+        tasks._post = real
+        inbound.record("mattermost", [])
 
 
 if __name__ == "__main__":

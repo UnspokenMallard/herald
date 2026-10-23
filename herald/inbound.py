@@ -93,7 +93,9 @@ CREATE TABLE IF NOT EXISTS signals (
     lang         TEXT,
     headline     TEXT,
     draft        TEXT,
-    reminded_at  REAL
+    reminded_at  REAL,
+    task_id      TEXT,
+    task_title   TEXT
 );
 -- One OPEN signal per (source, external_id). Cleared rows are unconstrained, so
 -- a notification that comes back is a new row and the history of both is kept.
@@ -114,6 +116,10 @@ JUDGEMENT_COLUMNS = ("critical", "notified_at", "thread", "needs_reply", "lang",
 def ensure_schema() -> None:
     with store.connect() as conn:
         conn.executescript(_SCHEMA)
+        have = {r[1] for r in conn.execute("PRAGMA table_info(signals)")}
+        for column in ("task_id", "task_title"):  # added 2026-10-23, after the table existed
+            if column not in have:
+                conn.execute(f"ALTER TABLE signals ADD COLUMN {column} TEXT")
 
 
 def cfg(config: Mapping[str, Any] | None = None) -> dict:
@@ -253,7 +259,7 @@ def open_rows() -> list[dict]:
     (they have their own ping)."""
     ensure_schema()
     cols = ("id", "source", "kind", "title", "url", "actor", "external_ts", "first_seen", "body", "meta",
-            "thread", "critical", "needs_reply", "lang", "headline", "draft", "notified_at", "reminded_at")
+            "thread", "critical", "needs_reply", "lang", "headline", "draft", "notified_at", "reminded_at", "task_title")
     with store.connect() as conn:
         rows = conn.execute(
             f"SELECT {', '.join(cols)} FROM signals WHERE cleared_at IS NULL "

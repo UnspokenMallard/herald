@@ -86,6 +86,10 @@ def _draft_note(draft: str | None) -> str:
     return " I could not save a reply draft this time."
 
 
+def _task_note(title: str | None) -> str:
+    return f" I added a task: {clean_line(title, 120)}." if title else ""
+
+
 def _line(group: list[dict]) -> str:
     row = group[-1]
     head = (row["headline"] or fallback(row)).rstrip(".")
@@ -93,7 +97,7 @@ def _line(group: list[dict]) -> str:
     where = _where(row)
     if len(group) > 1:
         where += f", {len(group)} messages"
-    return f"• {head} ({where}).{_draft_note(row['draft'])}"
+    return f"• {head} ({where}).{_draft_note(row['draft'])}{_task_note(row.get('task_title'))}"
 
 
 def _groups(rows: list[dict]) -> list[list[dict]]:

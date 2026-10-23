@@ -118,6 +118,14 @@ urgent_priority = 4
 max_bytes = 3900
 timeout_s = 15
 
+[tasks]
+# TickTick tasks from actionable messages (herald/tasks.py, Anze 2026-10-23): Jarvis's triage judges a
+# Mattermost DM/mention or work mail actionable and calls POST /task; the task lands in the Work list and
+# the next briefing names it. Create only, never edits or deletes.
+enabled = true
+project_id = "6a33b2d40fdc3acea80bdb3d"
+timeout_s = 15
+
 [inbound]
 # Read-only pollers for the things waiting on you that are NOT on this machine.
 # Every event source this daemon had before these was local, which is a complete

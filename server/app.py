@@ -16,7 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from herald import briefing, commands, delivery, drafts, inbound, ping, reports, store, toast  # noqa: E402
+from herald import briefing, commands, delivery, drafts, inbound, ping, reports, store, tasks, toast  # noqa: E402
 from starlette.applications import Starlette  # noqa: E402
 from starlette.concurrency import run_in_threadpool  # noqa: E402
 from starlette.middleware import Middleware  # noqa: E402
@@ -96,6 +96,10 @@ def do_inbound_update(b: dict) -> dict:
     return {"updated": inbound.update([int(i) for i in b.get("ids") or []], **dict(b.get("fields") or {}))}
 
 
+def do_task(b: dict) -> dict:
+    return tasks.create(int(b["signal_id"]), str(b["title"]), str(b.get("note") or ""))
+
+
 def do_command_poll(_b: dict) -> dict:
     return commands.receive()
 
@@ -130,6 +134,7 @@ routes = [
     Route("/toast", sync_post(do_toast), methods=["POST"]),
     Route("/run/inbound-poll", post(do_inbound_poll), methods=["POST"]),
     Route("/inbound/update", sync_post(do_inbound_update), methods=["POST"]),
+    Route("/task", sync_post(do_task), methods=["POST"]),
     Route("/run/command-poll", sync_post(do_command_poll), methods=["POST"]),
     Route("/commands/claim", sync_post(do_claim), methods=["POST"]),
     Route("/commands/{id:int}/ack", sync_post(do_ack), methods=["POST"]),
