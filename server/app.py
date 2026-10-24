@@ -77,6 +77,11 @@ def do_ping_hud(b: dict) -> dict:
     return {**ping.send_hud(text, str(b.get("click") or ""), kind=ping.kind_of({**b, "kind": "hud"})), "body": text}
 
 
+def do_ping_persona(b: dict) -> dict:
+    text = ping.compose_persona(str(b.get("name") or ""), str(b.get("severity") or "warn"), str(b.get("summary") or ""))
+    return {**ping.send_persona(text, str(b.get("click") or "")), "body": text}
+
+
 def do_report(b: dict) -> dict:
     return reports.push(str(b["title"]), str(b.get("text") or ""), b.get("spoken"))
 
@@ -133,6 +138,7 @@ routes = [
     Route("/commands", get(lambda r: {"commands": commands.recent(int(r.query_params.get("limit", 20)))})),
     Route("/ping", sync_post(do_ping), methods=["POST"]),
     Route("/ping/hud", sync_post(do_ping_hud), methods=["POST"]),
+    Route("/ping/persona", sync_post(do_ping_persona), methods=["POST"]),
     Route("/report", sync_post(do_report), methods=["POST"]),
     Route("/briefing", sync_post(do_briefing), methods=["POST"]),
     Route("/draft", post(do_draft), methods=["POST"]),

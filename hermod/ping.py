@@ -486,13 +486,88 @@ def send_hud(text: str, click: str = "", config: Mapping[str, Any] | None = None
     return _publish(settings, text, extra={"Tags": "computer", **({"Click": click} if click.startswith("https://") else {})}, kind=kind)
 
 
+# A persona ping (2026-10-24, Anze: every part speaks in its own voice, the phone included): the part's
+# name and a one-sentence summary Jarvis supplies. This is the one free-text path in Hermod, so the filter
+# below is strict and has no sanitising: a summary that fails it is replaced by the fixed generic one
+# (never trimmed), and the HUD logs which. Lowercase words only: no digit, path, address, name or secret
+# can be spelled with them.
+PERSONAS = ("Mimir", "Fafnir", "Heimdall", "Hermod", "Brokkr", "Bifrost", "Norns", "Odin")
+_PERSONA_FRAME = {"warn": "{name} has a warning: {summary}.", "error": "{name} sounds the alarm: {summary}."}
+_GENERIC_SUMMARY = "something needs a look"
+_SUMMARY_MAX = 140
+_SUMMARY_SHAPE = re.compile(r"^[a-z][a-z ,']*$")
+_TOKEN_MAX = 20
+# Words that mean a secret, a credential or an identity, whatever the spelling around them.
+_SECRET_WORDS = {"token", "tokens", "key", "keys", "password", "passwords", "passwd", "secret", "secrets",
+                 "bearer", "api", "credential", "credentials", "cookie", "cookies", "ssh", "oauth", "jwt"}
+# Names of people, products and repos; the personas are always on the list. `[ping] persona_deny` adds more.
+_NAME_WORDS = {n.lower() for n in PERSONAS} | {
+    "jarvis", "anze", "frigg", "tyr", "eventregistry", "newsapi", "yggdrasil", "asana", "mattermost", "notion",
+    "ticktick", "figma", "claude", "anthropic", "cmdpeek", "herald", "sentinel", "ntfy", "github", "docker",
+}
+
+
+def persona_reject(summary: str, config: Mapping[str, Any] | None = None) -> str:
+    """Why a summary may not reach the phone, or "" when it may. The order names the first leak found."""
+    text = str(summary)
+    if not text.strip():
+        return "empty"
+    if len(text) > _SUMMARY_MAX or "\n" in text:
+        return "too long or not one line"
+    if re.search(r"\d", text):
+        return "digit"
+    if re.search(r"[/\\~@]|://|\.\w", text) or "_" in text or "-" in text:
+        return "path, address or file name"
+    if re.search(r"[A-Z]", text):
+        return "capital letter (a name)"
+    if not _SUMMARY_SHAPE.match(text):
+        return "characters outside lowercase words"
+    words = re.findall(r"[a-z']+", text)
+    extra = {str(w).lower() for w in cfg(config).get("persona_deny") or []}
+    if any(len(w) >= _TOKEN_MAX for w in words):
+        return "long token"
+    if any(w in _SECRET_WORDS for w in words):
+        return "secret word"
+    if any(w in _NAME_WORDS or w in extra for w in words):
+        return "name"
+    return ""
+
+
+def compose_persona(name: str, severity: str, summary: str, config: Mapping[str, Any] | None = None) -> str:
+    """`{Name} has a warning: {summary}.` The name must be a persona; a summary that fails the filter
+    becomes the generic one."""
+    if name not in PERSONAS:
+        raise ValueError(f"unknown persona {name!r}")
+    text = str(summary).strip().rstrip(".")
+    return _PERSONA_FRAME.get(severity, _PERSONA_FRAME["warn"]).format(name=name, summary=text if not persona_reject(text, config) else _GENERIC_SUMMARY)
+
+
+_PERSONA_BODY = re.compile(rf"^(?:{'|'.join(PERSONAS)}) (?:has a warning|sounds the alarm): [a-z][a-z ,']*\.$")
+
+
+def is_persona_body(text: str, config: Mapping[str, Any] | None = None) -> bool:
+    """The finished body: the fixed frame around a summary that passes the filter."""
+    m = _PERSONA_BODY.match(text)
+    return bool(m) and not persona_reject(text.split(": ", 1)[1].rstrip("."), config)
+
+
+def send_persona(text: str, click: str = "", config: Mapping[str, Any] | None = None) -> dict:
+    settings = cfg(config)
+    if not settings["enabled"] or not settings["url"]:
+        return {"delivered": False, "reason": "ping disabled"}
+    if not is_persona_body(text, config):
+        log.warning("ping: refusing a persona body that is not content-free: %r", text[:80])
+        return {"delivered": False, "reason": "not content-free"}
+    return _publish(settings, text, extra={"Tags": "speaking_head", **({"Click": click} if click.startswith("https://") else {})}, kind="persona")
+
+
 def compose_payload(body: Mapping[str, Any]) -> str:
     """A structured ping request to its text. Jarvis supplies integers and the names of things; the
     sentence frames, the opener and every shape rule are here.
 
     kinds: `counts` (the state-change ping and the command reply: `counts`, optional `reviews`,
     `inbound`, `incidents` lists and a `lead`), `task` (`project`, `critical`), `health` (`failed`:
-    a count or `[[name, detail], ...]`), `hud` (`waiting`, `done`, `open`, `items`).
+    a count or `[[name, detail], ...]`), `hud` (`waiting`, `done`, `open`, `items`), `persona` (`name`, `severity`, `summary`).
     """
     kind = str(body.get("kind") or "")
     if kind == "counts":
@@ -509,5 +584,7 @@ def compose_payload(body: Mapping[str, Any]) -> str:
     if kind == "hud":
         return compose_hud(int(body.get("waiting") or 0), int(body.get("done") or 0), int(body.get("open") or 0),
                            [str(i) for i in body.get("items") or []])
+    if kind == "persona":
+        return compose_persona(str(body.get("name") or ""), str(body.get("severity") or "warn"), str(body.get("summary") or ""))
     raise ValueError(f"unknown ping kind {kind!r}")
 

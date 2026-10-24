@@ -185,6 +185,50 @@ def test_hud_ping():
         ping.urllib.request.urlopen = real
 
 
+def test_persona_ping():
+    ok = "a scheduled job needs a look"
+    assert ping.compose_persona("Norns", "warn", ok) == f"Norns has a warning: {ok}."
+    assert ping.compose_persona("Heimdall", "error", ok + ".") == f"Heimdall sounds the alarm: {ok}."
+    leaks = {
+        "digit": "disk is at 93 percent",
+        "path, address or file name": ["see /Users/anze/notes", "see ~notes", "open C:\\notes", "mail me at x@y", "fix foo.py now",
+                                       "run https://x.test now", "check er-web", "the job_runner failed"],
+        "capital letter (a name)": "ask Anze about it",
+        "secret word": ["the token expired", "the api failed", "a password changed", "a bearer was seen"],
+        "name": ["the heimdall check failed", "jarvis needs a look", "eventregistry is slow"],
+        "long token": "x" * 25,
+        "too long or not one line": ["a" * 141, "two\nlines"],
+        "empty": "  ",
+    }
+    for reason, texts in leaks.items():
+        for text in [texts] if isinstance(texts, str) else texts:
+            assert ping.persona_reject(text) == reason, (text, ping.persona_reject(text))
+            # A rejected summary is replaced by the generic one, never trimmed: nothing of it reaches the body.
+            body = ping.compose_persona("Mimir", "warn", text)
+            assert body == "Mimir has a warning: something needs a look.", (text, body)
+    assert ping.persona_reject("the nightly thing failed", {"ping": {"persona_deny": ["nightly"]}}) == "name"
+    for bad in ["Mimir has a warning: disk is at 93.", "Mimir has a warning: see /tmp/x.", "Bob has a warning: a check failed.",
+                "Mimir has a warning: a check failed.\nsecret", "Mimir said: a check failed."]:
+        assert not ping.is_persona_body(bad), bad
+    assert ping.is_persona_body(f"Fafnir sounds the alarm: {ok}.")
+    assert ping.compose_payload({"kind": "persona", "name": "Fafnir", "severity": "error", "summary": ok}) == f"Fafnir sounds the alarm: {ok}."
+    try:
+        ping.compose_persona("Mallory", "warn", ok)
+        raise AssertionError("an unknown persona was accepted")
+    except ValueError:
+        pass
+    sent: list = []
+    real = ping.urllib.request.urlopen
+    ping.urllib.request.urlopen = fake_net(sent)
+    try:
+        assert ping.send_persona(f"Norns has a warning: {ok}.", "https://hud.example/?open=odin", CFG)["delivered"]
+        assert sent[0][1].get("Click") == "https://hud.example/?open=odin"
+        assert ping.send_persona("Norns has a warning: a check failed at 93.", "", CFG)["reason"] == "not content-free"
+        assert len(sent) == 1
+    finally:
+        ping.urllib.request.urlopen = real
+
+
 def test_reports():
     text = "".join(f"- line {i:03d} " + "x" * 60 + "\n" for i in range(120))
     parts = reports.split(text, 1000)
