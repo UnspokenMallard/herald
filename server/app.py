@@ -2,7 +2,7 @@
 the machine, for callers that are not Python on this Mac (the HUD, scripts) and for Jarvis, which sends
 its pings, reports, briefings, drafts and alert toasts through it so the credentials live in this one
 process and the channel rules are enforced in one place. Python readers (Jarvis, Mimir) import the
-`hermod` library directly for the signal table and the phone-state check (same code, same store).
+`hermod` library directly for the signals and the phone-state check (same code, same records in Mimir).
 
 Localhost only: the host check refuses DNS rebinding, and a write carrying an Origin header (any browser
 page) is refused, so no web page can make Hermod say or save anything through Anze's browser.
@@ -17,6 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from hermod import briefing, commands, delivery, drafts, inbound, ping, reports, store, tasks, toast  # noqa: E402
+from hermod._mimir import records as mr  # noqa: E402
 from starlette.applications import Starlette  # noqa: E402
 from starlette.concurrency import run_in_threadpool  # noqa: E402
 from starlette.middleware import Middleware  # noqa: E402
@@ -34,6 +35,8 @@ def get(fn):
             return JSONResponse(await run_in_threadpool(fn, r))
         except ValueError as e:
             return JSONResponse({"error": str(e)}, status_code=400)
+        except mr.MimirDown as e:
+            return JSONResponse({"error": f"Mimir is unreachable: {e}"}, status_code=503)
     return endpoint
 
 
@@ -51,6 +54,8 @@ def post(fn):
             return JSONResponse(out)
         except (ValueError, KeyError, TypeError) as e:
             return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=400)
+        except mr.MimirDown as e:
+            return JSONResponse({"error": f"Mimir is unreachable: {e}"}, status_code=503)
     return endpoint
 
 
@@ -93,11 +98,11 @@ async def do_inbound_poll(_b: dict) -> dict:
 
 
 def do_inbound_update(b: dict) -> dict:
-    return {"updated": inbound.update([int(i) for i in b.get("ids") or []], **dict(b.get("fields") or {}))}
+    return {"updated": inbound.update([str(i) for i in b.get("ids") or []], **dict(b.get("fields") or {}))}
 
 
 def do_task(b: dict) -> dict:
-    return tasks.create(int(b["signal_id"]), str(b["title"]), str(b.get("note") or ""))
+    return tasks.create(str(b["signal_id"]), str(b["title"]), str(b.get("note") or ""))
 
 
 def do_command_poll(_b: dict) -> dict:
@@ -109,12 +114,12 @@ def do_claim(_b: dict) -> dict:
 
 
 def do_ack(b: dict) -> dict:
-    return {"ok": commands.finish(int(b["_path"]["id"]), str(b.get("outcome") or "failed"), str(b.get("detail") or ""))}
+    return {"ok": commands.finish(str(b["_path"]["id"]), str(b.get("outcome") or "failed"), str(b.get("detail") or ""))}
 
 
 def health(_r) -> dict:
     cfg = store.load_config()
-    return {"ok": True, "db": str(store.DB_PATH),
+    return {"ok": True, "outbox": mr.pending(store.SOURCE),
             "channels": {"ping": ping.cfg(cfg)["enabled"], "reports": reports.cfg(cfg)["enabled"],
                          "briefing": briefing.cfg(cfg)["enabled"], "commands": commands.cfg(cfg)["enabled"],
                          "inbound": inbound.cfg(cfg)["enabled"]},
@@ -137,7 +142,7 @@ routes = [
     Route("/task", sync_post(do_task), methods=["POST"]),
     Route("/run/command-poll", sync_post(do_command_poll), methods=["POST"]),
     Route("/commands/claim", sync_post(do_claim), methods=["POST"]),
-    Route("/commands/{id:int}/ack", sync_post(do_ack), methods=["POST"]),
+    Route("/commands/{id}/ack", sync_post(do_ack), methods=["POST"]),
 ]
 
 app = Starlette(routes=routes, middleware=[Middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])])

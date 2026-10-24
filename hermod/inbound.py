@@ -1,7 +1,7 @@
 """Inbound signals: the things waiting on the user that are not on this machine.
 
 Moved from Jarvis's daemon/inbound.py on 2026-10-17 (Hermod): the pollers, the secrets they read, the
-`signals` table (state/herald.db) and what clears a row. What stays in Jarvis is judgement -- is a task
+signals (Mimir records, `hermod.signal`) and what clears a row. What stays in Jarvis is judgement -- is a task
 critical, does a message need a reply, what to say -- which the brain does and which
 Jarvis writes back with `update()`. The text below is the original.
 
@@ -60,6 +60,7 @@ from datetime import datetime
 from typing import Any, Awaitable, Callable, Mapping
 
 from . import mattermost, store
+from ._mimir import records as mr
 from .store import log
 
 # source name -> async fetcher. Returns the COMPLETE current set of open
@@ -68,41 +69,14 @@ from .store import log
 Fetcher = Callable[[Mapping[str, Any]], Awaitable["list[dict] | None"]]
 SOURCES: dict[str, Fetcher] = {}
 
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS signals (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    source       TEXT NOT NULL,
-    external_id  TEXT NOT NULL,
-    kind         TEXT,
-    title        TEXT NOT NULL,
-    url          TEXT,
-    actor        TEXT,
-    external_ts  REAL,
-    first_seen   REAL NOT NULL,
-    last_seen    REAL NOT NULL,
-    cleared_at   REAL,
-    cleared_by   TEXT,
-    project      TEXT,
-    task_gid     TEXT,
-    critical     INTEGER,
-    notified_at  REAL,
-    body         TEXT,
-    meta         TEXT,
-    thread       TEXT,
-    needs_reply  INTEGER,
-    lang         TEXT,
-    headline     TEXT,
-    draft        TEXT,
-    reminded_at  REAL,
-    task_id      TEXT,
-    task_title   TEXT
-);
--- One OPEN signal per (source, external_id). Cleared rows are unconstrained, so
--- a notification that comes back is a new row and the history of both is kept.
-CREATE UNIQUE INDEX IF NOT EXISTS ux_signals_open
-    ON signals(source, external_id) WHERE cleared_at IS NULL;
-CREATE INDEX IF NOT EXISTS ix_signals_first_seen ON signals(first_seen);
-"""
+# A signal is a Mimir record: kind `hermod.signal`, key "<source>:<external_id>" (so there is one open
+# signal per pair), data = source, external_id, kind, title, url, actor, external_ts, first_seen,
+# last_seen, project, task_gid, body, meta (a dict) and the judgement columns below, plus task_id and
+# task_title once a TickTick task exists. Its `id` for the callers is the key. When it clears, the record
+# is deleted and a copy without the text goes to `hermod.signal_cleared` for 30 days, so a notification
+# that comes back is a new signal and the history of both is kept.
+SIGNAL, CLEARED = "hermod.signal", "hermod.signal_cleared"
+CLEARED_DAYS = 30
 
 # The columns Jarvis may write back after judging a signal. `critical` is NULL until judged
 # (the brain's "urgent" for mail and chat too), `notified_at` NULL until announced, `headline` is the
@@ -111,15 +85,6 @@ CREATE INDEX IF NOT EXISTS ix_signals_first_seen ON signals(first_seen);
 # `cleared_*` are never Jarvis's to change.
 JUDGEMENT_COLUMNS = ("critical", "notified_at", "thread", "needs_reply", "lang", "headline", "draft",
                      "reminded_at")
-
-
-def ensure_schema() -> None:
-    with store.connect() as conn:
-        conn.executescript(_SCHEMA)
-        have = {r[1] for r in conn.execute("PRAGMA table_info(signals)")}
-        for column in ("task_id", "task_title"):  # added 2026-10-23, after the table existed
-            if column not in have:
-                conn.execute(f"ALTER TABLE signals ADD COLUMN {column} TEXT")
 
 
 def cfg(config: Mapping[str, Any] | None = None) -> dict:
@@ -171,149 +136,109 @@ def source(name: str) -> Callable[[Fetcher], Fetcher]:
 # --------------------------------------------------------------------------
 
 
+def key_of(source_name: str, external_id: Any) -> str:
+    return f"{source_name}:{external_id}"
+
+
+def _open(source_name: str | None = None) -> list[dict]:
+    """Open signals as flat dicts, `id` = the record key, oldest first. Raises `MimirDown`."""
+    rows = mr.query(kind=SIGNAL, where=f"source:{source_name}" if source_name else None, source=store.SOURCE, limit=5000)
+    out = [{**r["data"], "id": r["key"]} for r in rows]
+    return sorted(out, key=lambda s: (s.get("first_seen") or 0, s["id"]))
+
+
 def record(source_name: str, items: list[dict]) -> tuple[int, int]:
     """Upsert the current set and clear anything no longer in it.
 
     Returns `(new, cleared)`. Only ever called with a real fetch result -- see
     `poll_one`, which refuses to call it on a failure. A `store.Partial` (a truncated fetch) is
     upserted but clears nothing: the signals it does not name may simply be past the limit.
+    Raises `mr.MimirDown` before writing anything when it cannot read what is open; the next poll
+    fetches the whole set again, so nothing is lost.
     """
-    ensure_schema()
     now = time.time()
+    have = {s["external_id"]: s for s in _open(source_name)}
     seen_ids = {str(i["external_id"]) for i in items}
     new = 0
 
-    with store.connect() as conn:
-        for item in items:
-            ext = str(item["external_id"])
-            row = conn.execute(
-                "SELECT id FROM signals WHERE source = ? AND external_id = ? "
-                "AND cleared_at IS NULL",
-                (source_name, ext),
-            ).fetchone()
-            if row:
-                # kind and project too: a parser that learns to read a message
-                # (Asana, 2026-09-29) re-labels the rows already open.
-                conn.execute(
-                    "UPDATE signals SET last_seen = ?, title = ?, url = ?, kind = ?, "
-                    "project = ?, task_gid = ? WHERE id = ?",
-                    (now, str(item.get("title", ""))[:300], item.get("url"), item.get("kind"),
-                     item.get("project"), item.get("task_gid"), row[0]),
-                )
-                continue
-            meta = item.get("meta")
-            conn.execute(
-                "INSERT INTO signals(source, external_id, kind, title, url, actor, "
-                "external_ts, first_seen, last_seen, project, task_gid, body, meta) "
-                "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (source_name, ext, item.get("kind"), str(item.get("title", ""))[:300],
-                 item.get("url"), item.get("actor"), item.get("external_ts"), now, now,
-                 item.get("project"), item.get("task_gid"), item.get("body"),
-                 json.dumps(meta) if meta is not None else None),
-            )
-            new += 1
+    for item in items:
+        ext = str(item["external_id"])
+        key = key_of(source_name, ext)
+        title = str(item.get("title", ""))[:300]
+        if ext in have:
+            # kind and project too: a parser that learns to read a message
+            # (Asana, 2026-09-29) re-labels the rows already open.
+            mr.patch(store.SOURCE, SIGNAL, key, mr.scrub({
+                "last_seen": now, "title": title, "url": item.get("url"), "kind": item.get("kind"),
+                "project": item.get("project"), "task_gid": item.get("task_gid")}), at=now)
+            continue
+        mr.put(store.SOURCE, SIGNAL, key, mr.scrub({
+            "source": source_name, "external_id": ext, "kind": item.get("kind"), "title": title,
+            "url": item.get("url"), "actor": item.get("actor"), "external_ts": item.get("external_ts"),
+            "first_seen": now, "last_seen": now, "project": item.get("project"),
+            "task_gid": item.get("task_gid"), "body": item.get("body"), "meta": item.get("meta")}),
+            at=now, if_absent=True)
+        new += 1
 
-        open_rows = conn.execute(
-            "SELECT id, external_id FROM signals WHERE source = ? AND cleared_at IS NULL",
-            (source_name,),
-        ).fetchall()
-        gone = [] if isinstance(items, store.Partial) else [r[0] for r in open_rows if r[1] not in seen_ids]
-        for signal_id in gone:
-            # The message text goes with the signal: nothing reads it once the
-            # user has seen it, and the row is kept for 30 days.
-            conn.execute(
-                "UPDATE signals SET cleared_at = ?, cleared_by = 'gone', body = NULL, meta = NULL "
-                "WHERE id = ?",
-                (now, signal_id),
-            )
+    gone = [] if isinstance(items, store.Partial) else [s for ext, s in have.items() if ext not in seen_ids]
+    for signal in gone:
+        # The message text goes with the signal: nothing reads it once the
+        # user has seen it, and the copy is kept for 30 days.
+        kept = {k: v for k, v in signal.items() if k not in ("id", "body", "meta")}
+        mr.put(store.SOURCE, CLEARED, f"{signal['id']}:{int(now * 1000)}",
+               {**kept, "cleared_at": now, "cleared_by": "gone"}, at=now, ttl_days=CLEARED_DAYS)
+        mr.delete(store.SOURCE, SIGNAL, signal["id"], at=now)
     return new, len(gone)
 
 
 def waiting(source_name: str | None = None) -> list[dict]:
-    ensure_schema()
-    sql = ("SELECT id, source, external_id, kind, title, url, actor, external_ts, "
-           "first_seen, last_seen, project, critical FROM signals WHERE cleared_at IS NULL")
-    args: list[Any] = []
-    if source_name:
-        sql += " AND source = ?"
-        args.append(source_name)
-    sql += " ORDER BY first_seen"
     cols = ("id", "source", "external_id", "kind", "title", "url", "actor",
             "external_ts", "first_seen", "last_seen", "project", "critical")
-    with store.connect() as conn:
-        return [dict(zip(cols, r)) for r in conn.execute(sql, args).fetchall()]
+    return [{c: s.get(c) for c in cols} for s in _open(source_name)]
 
-
-def prune(retain_days: int = 30) -> int:
-    """Cleared signals only. An open one survives at any age."""
-    ensure_schema()
-    cutoff = time.time() - retain_days * 86400
-    with store.connect() as conn:
-        return conn.execute(
-            "DELETE FROM signals WHERE cleared_at IS NOT NULL AND cleared_at < ?",
-            (cutoff,),
-        ).rowcount
 
 def open_rows() -> list[dict]:
-    """Every open signal with the text and meta the briefing reads, `meta` parsed, Asana tasks left out
+    """Every open signal with the text and meta the briefing reads, `meta` a dict, Asana tasks left out
     (they have their own ping)."""
-    ensure_schema()
     cols = ("id", "source", "kind", "title", "url", "actor", "external_ts", "first_seen", "body", "meta",
             "thread", "critical", "needs_reply", "lang", "headline", "draft", "notified_at", "reminded_at", "task_title")
-    with store.connect() as conn:
-        rows = conn.execute(
-            f"SELECT {', '.join(cols)} FROM signals WHERE cleared_at IS NULL "
-            "AND (kind IS NULL OR kind != 'asana-task') ORDER BY first_seen, id").fetchall()
     out = []
-    for row in rows:
-        item = dict(zip(cols, row))
-        try:
-            item["meta"] = json.loads(item["meta"]) if item["meta"] else {}
-        except ValueError:
-            item["meta"] = {}
+    for s in _open():
+        if s.get("kind") == "asana-task":
+            continue
+        item = {c: s.get(c) for c in cols}
+        item["meta"] = item["meta"] if isinstance(item["meta"], dict) else {}
         out.append(item)
     return out
 
 
 def pending_tasks() -> list[dict]:
     """Open Asana tasks whose per-task ping has not gone out."""
-    ensure_schema()
     cols = ("id", "title", "project", "task_gid", "critical")
-    with store.connect() as conn:
-        rows = conn.execute(
-            "SELECT id, title, project, task_gid, critical FROM signals "
-            "WHERE kind = 'asana-task' AND cleared_at IS NULL AND notified_at IS NULL "
-            "ORDER BY first_seen"
-        ).fetchall()
-    return [dict(zip(cols, r)) for r in rows]
+    return [{c: s.get(c) for c in cols} for s in _open()
+            if s.get("kind") == "asana-task" and s.get("notified_at") is None]
 
 
-def update(ids: list[int], **fields: Any) -> int:
+def update(ids: list[str], **fields: Any) -> int:
     """Write Jarvis's judgement onto signals. Only `JUDGEMENT_COLUMNS`; anything else is refused."""
     bad = set(fields) - set(JUDGEMENT_COLUMNS)
     if bad:
         raise ValueError(f"not a judgement column: {sorted(bad)}")
     if not fields or not ids:
         return 0
-    sets = ", ".join(f"{name} = ?" for name in fields)
-    ensure_schema()
-    with store.connect() as conn:
-        for signal_id in ids:
-            conn.execute(f"UPDATE signals SET {sets} WHERE id = ?", (*fields.values(), int(signal_id)))
+    for signal_id in ids:
+        mr.patch(store.SOURCE, SIGNAL, str(signal_id), mr.scrub(fields))
     return len(ids)
 
 
 def adopt_announced(before: float) -> int:
     """Once, when the briefing is first switched on: mail and GitHub signals already open and first
     seen before `before` were named by the ping, so they are marked announced, not briefed again."""
-    ensure_schema()
-    with store.connect() as conn:
-        return conn.execute(
-            "UPDATE signals SET notified_at = first_seen WHERE cleared_at IS NULL "
-            "AND notified_at IS NULL AND source IN ('gmail', 'github') AND kind != 'asana-task' "
-            "AND first_seen < ?", (before,)).rowcount
-
-
+    named = [s for s in _open() if s.get("notified_at") is None and s["source"] in ("gmail", "github")
+             and s.get("kind") not in (None, "asana-task") and (s.get("first_seen") or 0) < before]
+    for s in named:
+        mr.patch(store.SOURCE, SIGNAL, s["id"], {"notified_at": s["first_seen"]})
+    return len(named)
 
 
 async def _run(argv: list[str], timeout_s: int) -> tuple[int, str]:
@@ -737,7 +662,11 @@ async def poll_one(name: str, config: Mapping[str, Any] | None = None) -> str:
         # Disabled, unconfigured, or failed. All three mean the same thing to
         # the table: do not touch it. The distinction is in the log.
         return f"{name}: no result (disabled or unavailable)"
-    new, cleared = record(name, items)
+    try:
+        new, cleared = record(name, items)
+    except mr.MimirDown as exc:
+        log.warning("inbound: %s not recorded, Mimir is unreachable: %s", name, exc)
+        return f"{name}: not recorded (Mimir unreachable)"
     line = f"{name}: {len(items)} open, {new} new, {cleared} cleared"
     if isinstance(items, store.Partial):
         # Hermod never alerts: Jarvis raises `inbound-truncated` when a result line carries this token.

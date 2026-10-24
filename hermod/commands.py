@@ -17,13 +17,17 @@ reports the outcome back (`finish`). Hermod decides nothing about what a verb do
     mute a push, rebuild a report, or start one of two fixed jobs. They cannot make it write code,
     commit, push, or choose what runs. The topic is separate from the ping topic and carries its own
     token, but the design does not rely on that token holding.
-  * One row per ntfy message (`message_id` unique), so a re-poll that sees the same message again is
+  * One Mimir record per ntfy message (kind `hermod.command`, key = the message id, which is also the
+    command's `id` for Jarvis), so a re-poll that sees the same message again is
     a no-op rather than a second execution: `snooze 6` twice is not `snooze 6`. A command is
-    **claimed** before it is handed over (pending -> running), so a crash between the verb and its
+    **claimed** before it is handed over (pending -> running, a compare-and-set), so a crash between the verb and its
     outcome leaves a `running` row to read, never a silent second run.
   * Anything older than `max_age_s` is read and recorded but not executed: a queued backlog
     delivered after an outage should not fire a burst of snoozes.
   * A poll that fails returns None, never `[]` (the same three-valued rule as every poller here).
+  * These writes go to Mimir at once and are never queued in the outbox: a command recorded late would
+    run late. With Mimir down the poll reports `failed` and the message is read again next time, while it
+    is younger than `max_age_s`.
 """
 
 from __future__ import annotations
@@ -35,6 +39,7 @@ import urllib.request
 from typing import Any, Mapping
 
 from . import store
+from ._mimir import records as mr
 from .store import log
 
 # The complete set. Adding to it is a security decision, not a convenience.
@@ -47,28 +52,10 @@ FORBIDDEN = (
     "declare", "widen", "delete", "unregister", "restart", "flip", "spend",
 )
 
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS commands (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    message_id    TEXT NOT NULL,
-    received_at   REAL NOT NULL,
-    sent_at       REAL,
-    verb          TEXT,
-    args          TEXT,
-    outcome       TEXT NOT NULL,
-    detail        TEXT
-);
-CREATE UNIQUE INDEX IF NOT EXISTS ux_commands_message ON commands(message_id);
-CREATE INDEX IF NOT EXISTS ix_commands_received ON commands(received_at);
-"""
+KIND = "hermod.command"
 
 # Outcomes Hermod writes itself; Jarvis's are done, failed, refused, no-match.
 PENDING, RUNNING = "pending", "running"
-
-
-def ensure_schema() -> None:
-    with store.connect() as conn:
-        conn.executescript(_SCHEMA)
 
 
 def cfg(config: Mapping[str, Any] | None = None) -> dict:
@@ -145,21 +132,18 @@ def parse(text: str) -> tuple[str, list[str]] | None:
 
 
 def _record(message_id: str, sent_at: float | None, verb: str | None, args: list[str],
-            outcome: str, detail: str) -> int | None:
-    with store.connect() as conn:
-        cur = conn.execute(
-            "INSERT OR IGNORE INTO commands(message_id, received_at, sent_at, verb, "
-            "args, outcome, detail) VALUES(?, ?, ?, ?, ?, ?, ?)",
-            (message_id, time.time(), sent_at, verb, " ".join(args)[:500], outcome, detail[:500]),
-        )
-        return cur.lastrowid if cur.rowcount else None
+            outcome: str, detail: str) -> str | None:
+    """The message id when this call recorded it, None when it was recorded before."""
+    now = time.time()
+    data = mr.scrub({"message_id": message_id, "received_at": now, "sent_at": sent_at, "verb": verb,
+                     "args": " ".join(args)[:500], "outcome": outcome, "detail": detail[:500]})
+    return message_id if mr.put(store.SOURCE, KIND, message_id, data, at=now, if_absent=True, wait=True) else None
 
 
 def receive_message(message: Mapping[str, Any], config: Mapping[str, Any] | None = None) -> dict:
     """Validate and record one message. Recorded *before* it is decided whether to act, so a refusal and
     a stale message leave the same evidence a success does. Returns `{"outcome", "verb", "id"}`:
     `pending` means Jarvis should run it; anything else is final."""
-    ensure_schema()
     settings = cfg(config)
     message_id = str(message.get("id") or "")
     text = str(message.get("message") or "")
@@ -188,38 +172,37 @@ def receive(config: Mapping[str, Any] | None = None) -> dict:
     settings = cfg(config)
     if not settings["enabled"]:
         return {"state": "disabled", "results": []}
-    ensure_schema()
     messages = fetch(config)
     if messages is None:
         return {"state": "failed", "results": []}
-    return {"state": "ok" if messages else "empty", "results": [receive_message(m, config) for m in messages]}
+    try:
+        results = [receive_message(m, config) for m in messages]
+    except mr.MimirDown as exc:
+        log.warning("command: Mimir is unreachable, %d message(s) not recorded: %s", len(messages), exc)
+        return {"state": "failed", "results": []}
+    return {"state": "ok" if messages else "empty", "results": results}
 
 
-def claim(only: int | None = None) -> list[dict]:
-    """Pending commands, marked running, oldest first: `{"id", "verb", "args": [..]}`. `only` claims one."""
-    ensure_schema()
-    with store.connect() as conn:
-        rows = conn.execute("SELECT id, verb, args FROM commands WHERE outcome = ? AND (? IS NULL OR id = ?) "
-                            "ORDER BY received_at, id", (PENDING, only, only)).fetchall()
-        for row in rows:
-            conn.execute("UPDATE commands SET outcome = ? WHERE id = ? AND outcome = ?", (RUNNING, row[0], PENDING))
-    return [{"id": r[0], "verb": r[1], "args": (r[2] or "").split()} for r in rows]
+def _all() -> list[dict]:
+    return [{**r["data"], "id": r["key"]} for r in mr.query(kind=KIND, order="desc", limit=500, source=store.SOURCE)]
 
 
-def finish(command_id: int, outcome: str, detail: str = "") -> bool:
+def claim(only: str | None = None) -> list[dict]:
+    """Pending commands, marked running, oldest first: `{"id", "verb", "args": [..]}`. `only` claims one.
+    A command another caller claimed first is left out."""
+    rows = sorted((c for c in _all() if c["outcome"] == PENDING and only in (None, c["id"])),
+                  key=lambda c: (c["received_at"], c["id"]))
+    won = [c for c in rows if mr.patch(store.SOURCE, KIND, c["id"], {"outcome": RUNNING}, if_={"outcome": PENDING}, wait=True)]
+    return [{"id": c["id"], "verb": c["verb"], "args": (c["args"] or "").split()} for c in won]
+
+
+def finish(command_id: str, outcome: str, detail: str = "") -> bool:
     """Jarvis's outcome for a command it ran. Only a `running` row can be finished."""
-    ensure_schema()
-    with store.connect() as conn:
-        return conn.execute("UPDATE commands SET outcome = ?, detail = ? WHERE id = ? AND outcome = ?",
-                            (outcome, detail[:500], int(command_id), RUNNING)).rowcount > 0
+    return bool(mr.patch(store.SOURCE, KIND, str(command_id), mr.scrub({"outcome": outcome, "detail": detail[:500]}),
+                         if_={"outcome": RUNNING}, wait=True))
 
 
 def recent(limit: int = 20) -> list[dict]:
-    ensure_schema()
     cols = ("id", "message_id", "received_at", "verb", "args", "outcome", "detail")
-    with store.connect() as conn:
-        rows = conn.execute(
-            "SELECT id, message_id, received_at, verb, args, outcome, detail "
-            "FROM commands ORDER BY received_at DESC LIMIT ?", (limit,)
-        ).fetchall()
-    return [dict(zip(cols, r)) for r in rows]
+    rows = sorted(_all(), key=lambda c: c["received_at"], reverse=True)[:limit]
+    return [{c: row.get(c) for c in cols} for row in rows]

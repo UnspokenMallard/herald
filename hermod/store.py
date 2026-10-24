@@ -1,7 +1,7 @@
-"""Hermod's store: state/herald.db (WAL), secrets, config.toml.
+"""Hermod's store: secrets and config.toml. The signals and commands live in Mimir (hermod/_mimir.py).
 
 Paths are module attributes read at call time, so a test points them at a scratch directory
-(`store.ROOT`, `store.STATE`, `store.DB_PATH`, `store.CONFIG`, `store.SECRETS`) the way Jarvis's
+(`store.ROOT`, `store.STATE`, `store.CONFIG`, `store.SECRETS`) the way Jarvis's
 selftest does with `core.ROOT`. Stdlib only: imported by Jarvis's venv, Mimir's venv and Hermod's own.
 
 Secrets live in `~/.herald/secrets/` (0600, never git: `.gitignore` names the directory). There is
@@ -9,17 +9,15 @@ deliberately no config key for any credential: config.toml is committed.
 """
 from __future__ import annotations
 
-import contextlib
 import json
 import logging
 import os
-import sqlite3
 import tomllib
 from pathlib import Path
 
 ROOT = Path(os.environ.get("HERMOD_HOME", Path.home() / ".herald"))
 STATE = ROOT / "state"
-DB_PATH = STATE / "herald.db"
+SOURCE = "hermod"  # the prefix of every record kind Hermod writes in Mimir
 CONFIG = ROOT / "config.toml"
 SECRETS = ROOT / "secrets"
 log = logging.getLogger("hermod")
@@ -27,23 +25,6 @@ log = logging.getLogger("hermod")
 class Partial(list):
     """A fetch result known to be incomplete (a page or per-channel limit was hit). It is recorded but
     must never clear the signals it does not name: `inbound.record` skips the `gone` sweep for it."""
-
-
-_META = "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
-
-
-@contextlib.contextmanager
-def connect():
-    """`with connect() as conn:` commits or rolls back, and always closes (one handle per call)."""
-    Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
-    try:
-        with conn:
-            yield conn
-    finally:
-        conn.close()
 
 
 def load_config() -> dict:
@@ -66,17 +47,3 @@ def secret(name: str) -> dict | None:
         log.warning("hermod: %s is unreadable: %s", path.name, exc)
         return None
     return doc if isinstance(doc, dict) else None
-
-
-def set_meta(key: str, value: str) -> None:
-    with connect() as conn:
-        conn.execute(_META)
-        conn.execute("INSERT INTO meta(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                     (key, value))
-
-
-def get_meta(key: str) -> str | None:
-    with connect() as conn:
-        conn.execute(_META)
-        row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
-    return row[0] if row else None

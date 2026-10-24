@@ -5,11 +5,11 @@ reports a bug for him to fix, Jarvis's triage judges it `actionable` and calls `
 in the work list and the next briefing names it, so a false positive can be deleted. Creating a task is
 the only thing this module does: it never completes, edits or deletes one.
 
-One task per message, however often it is asked: `signals.task_id` is claimed with a compare-and-set
-BEFORE the network call, and the claim is looked up across every row with the same (source, external_id),
-so a re-poll, a restart, a cleared-and-returned row or a second caller cannot create a second task. A
-crash between claim and create leaves the claim and no task (a lost task, never a duplicate); a failed
-create releases the claim so the next pass retries.
+One task per message, however often it is asked: a `hermod.task` record keyed like the signal
+("<source>:<external_id>") is claimed with an insert-if-absent BEFORE the network call. It outlives the
+signal's open row (90 days), so a re-poll, a restart, a cleared-and-returned signal or a second caller
+cannot create a second task. A crash between claim and create leaves the claim and no task (a lost task,
+never a duplicate); a failed create releases the claim so the next pass retries.
 
 Uses the OAuth access token the TickTick MCP keeps in ~/.config/ticktick-mcp/credentials.json (as
 jobs/ticktick-tasks.py does); nothing is copied. A 401 means the MCP must re-authenticate.
@@ -25,11 +25,13 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from . import inbound, store
+from ._mimir import records as mr
 from .store import log
 
 CREDS = Path(os.environ.get("TICKTICK_CREDS", Path.home() / ".config" / "ticktick-mcp" / "credentials.json"))
 API = os.environ.get("TICKTICK_API", "https://api.ticktick.com/open/v1")
 CLAIM = "claiming"
+KIND, KEEP_DAYS = "hermod.task", 90
 
 
 def cfg(config: Mapping[str, Any] | None = None) -> dict:
@@ -43,12 +45,12 @@ def cfg(config: Mapping[str, Any] | None = None) -> dict:
 
 def content(row: Mapping[str, Any], note: str) -> str:
     """Who, where, when, the gist and the link. The message text itself stays in Hermod."""
-    meta = json.loads(row["meta"]) if row["meta"] else {}
-    when = datetime.fromtimestamp(row["external_ts"] or row["first_seen"]).strftime("%Y-%m-%d")
-    lines = [f"From {row['actor'] or 'someone'}, {meta.get('where') or row['source']}, {when}."]
+    meta = row.get("meta") or {}
+    when = datetime.fromtimestamp(row.get("external_ts") or row["first_seen"]).strftime("%Y-%m-%d")
+    lines = [f"From {row.get('actor') or 'someone'}, {meta.get('where') or row['source']}, {when}."]
     if note.strip():
         lines += ["", note.strip()[:600]]
-    if row["url"]:
+    if row.get("url"):
         lines += ["", str(row["url"])]
     return "\n".join(lines)
 
@@ -58,8 +60,8 @@ def addressed(row: Mapping[str, Any]) -> str:
     (Anze, 2026-10-23): a DM, a post that mentions him (the poller already keeps only those in channels), or
     mail with his address in To. A group message, mail he is only copied on or a list, and every other
     signal kind, get none, whatever the triage thought."""
-    meta = json.loads(row["meta"]) if row["meta"] else {}
-    kind = row["kind"]
+    meta = row.get("meta") or {}
+    kind = row.get("kind")
     if kind == "mattermost-mention" or (kind == "mattermost-dm" and meta.get("channel_type") == "D"):
         return ""
     if kind == "mail":
@@ -81,7 +83,7 @@ def _post(settings: Mapping[str, Any], payload: dict) -> str:
         return str(json.load(resp)["id"])
 
 
-def create(signal_id: int, title: str, note: str = "", config: Mapping[str, Any] | None = None) -> dict:
+def create(signal_id: str, title: str, note: str = "", config: Mapping[str, Any] | None = None) -> dict:
     """`{"created": bool, "task_id", "reason"}`. Never raises for TickTick trouble."""
     settings = cfg(config)
     title = " ".join(str(title).split())[:200]
@@ -89,27 +91,20 @@ def create(signal_id: int, title: str, note: str = "", config: Mapping[str, Any]
         return {"created": False, "task_id": None, "reason": "tasks are off in Hermod's config"}
     if not title:
         return {"created": False, "task_id": None, "reason": "no title"}
-    inbound.ensure_schema()
-    with store.connect() as conn:
-        row = conn.execute(
-            "SELECT id, source, external_id, actor, url, meta, external_ts, first_seen, kind FROM signals WHERE id = ?",
-            (int(signal_id),)).fetchone()
-        if row is None:
+    signal_id = str(signal_id)
+    try:
+        data = mr.get(inbound.SIGNAL, signal_id, source=store.SOURCE)
+        if data is None:
             return {"created": False, "task_id": None, "reason": "no such signal"}
-        keys = ("id", "source", "external_id", "actor", "url", "meta", "external_ts", "first_seen", "kind")
-        row = dict(zip(keys, row))
+        row = {**data, "id": signal_id}
         why = addressed(row)
         if why:
             return {"created": False, "task_id": None, "reason": why}
-        done = conn.execute(
-            "SELECT task_id FROM signals WHERE source = ? AND external_id = ? AND task_id IS NOT NULL LIMIT 1",
-            (row["source"], row["external_id"])).fetchone()
-        if done:
-            return {"created": False, "task_id": done[0], "reason": "already has a task"}
-        claimed = conn.execute("UPDATE signals SET task_id = ? WHERE id = ? AND task_id IS NULL",
-                               (CLAIM, row["id"])).rowcount
-    if not claimed:
-        return {"created": False, "task_id": None, "reason": "already has a task"}
+        if not mr.put(store.SOURCE, KIND, signal_id, {"task_id": CLAIM}, ttl_days=KEEP_DAYS, if_absent=True, wait=True):
+            done = mr.get(KIND, signal_id, source=store.SOURCE) or {}
+            return {"created": False, "task_id": done.get("task_id"), "reason": "already has a task"}
+    except mr.MimirDown as exc:
+        return {"created": False, "task_id": None, "reason": f"Mimir is unreachable: {exc}"}
     try:
         task_id = _post(settings, {"title": title, "content": content(row, note), "projectId": settings["project_id"]})
     except urllib.error.HTTPError as exc:
@@ -117,11 +112,10 @@ def create(signal_id: int, title: str, note: str = "", config: Mapping[str, Any]
     except (OSError, ValueError, KeyError, RuntimeError, urllib.error.URLError) as exc:
         reason = f"{type(exc).__name__}: {exc}"
     else:
-        with store.connect() as conn:
-            conn.execute("UPDATE signals SET task_id = ?, task_title = ? WHERE id = ?", (task_id, title, row["id"]))
-        log.info("tasks: created %s for signal %s", task_id, row["id"])
+        mr.patch(store.SOURCE, KIND, signal_id, {"task_id": task_id, "task_title": title})
+        mr.patch(store.SOURCE, inbound.SIGNAL, signal_id, {"task_id": task_id, "task_title": title})
+        log.info("tasks: created %s for signal %s", task_id, signal_id)
         return {"created": True, "task_id": task_id, "reason": ""}
-    with store.connect() as conn:  # release the claim: the next pass retries
-        conn.execute("UPDATE signals SET task_id = NULL WHERE id = ? AND task_id = ?", (row["id"], CLAIM))
-    log.warning("tasks: not created for signal %s: %s", row["id"], reason)
+    mr.delete(store.SOURCE, KIND, signal_id)  # release the claim: the next pass retries
+    log.warning("tasks: not created for signal %s: %s", signal_id, reason)
     return {"created": False, "task_id": None, "reason": reason}

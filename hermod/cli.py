@@ -17,16 +17,25 @@ import time
 from pathlib import Path
 
 from . import commands, delivery, inbound, ping, reports, store
+from ._mimir import records as mr
 
 JOBS = Path(__file__).resolve().parents[1] / "jobs"
 
 
 def main(argv: list[str] | None = None) -> int:
+    try:
+        return _main(argv)
+    except mr.MimirDown as exc:
+        print(f"Mimir is unreachable, so Hermod cannot read its signals or commands: {exc}", file=sys.stderr)
+        return 3
+
+
+def _main(argv: list[str] | None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     cmd, rest = (argv[0], argv[1:]) if argv else ("health", [])
     if cmd == "health":
         cfg = store.load_config()
-        print(json.dumps({"db": str(store.DB_PATH), "ping": ping.cfg(cfg)["enabled"], "reports": reports.cfg(cfg)["enabled"],
+        print(json.dumps({"outbox": mr.pending(store.SOURCE), "ping": ping.cfg(cfg)["enabled"], "reports": reports.cfg(cfg)["enabled"],
                           "commands": commands.cfg(cfg)["enabled"], "inbound": inbound.cfg(cfg)["enabled"],
                           "ntfy_token": bool(ping.token())}, indent=2))
         return 0
