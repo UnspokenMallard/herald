@@ -109,6 +109,7 @@ def cfg(config: Mapping[str, Any] | None = None) -> dict:
     section.setdefault("gmail_enabled", False)
     section.setdefault("gmail_host", "imap.gmail.com")
     section.setdefault("gmail_mailbox", "INBOX")
+    section.setdefault("gmail_sent", "[Gmail]/Sent Mail")  # where a reply to an open mail is looked for
     # UNSEEN alone would make every unread newsletter a thing "waiting on you".
     # The default is the narrow one; widen it deliberately.
     section.setdefault("gmail_search", "UNSEEN")
@@ -181,12 +182,13 @@ def record(source_name: str, items: list[dict]) -> tuple[int, int]:
         new += 1
 
     gone = [] if isinstance(items, store.Partial) else [s for ext, s in have.items() if ext not in seen_ids]
+    answered = getattr(items, "answered", frozenset())
     for signal in gone:
         # The message text goes with the signal: nothing reads it once the
         # user has seen it, and the copy is kept for 30 days.
         kept = {k: v for k, v in signal.items() if k not in ("id", "body", "meta")}
         mr.put(store.SOURCE, CLEARED, f"{signal['id']}:{int(now * 1000)}",
-               {**kept, "cleared_at": now, "cleared_by": "gone"}, at=now, ttl_days=CLEARED_DAYS)
+               {**kept, "cleared_at": now, "cleared_by": "answered" if signal["external_id"] in answered else "gone"}, at=now, ttl_days=CLEARED_DAYS)
         mr.delete(store.SOURCE, SIGNAL, signal["id"], at=now)
     return new, len(gone)
 
@@ -497,7 +499,9 @@ def _gmail_blocking(settings: dict, creds: dict, known: set[str] | None = None) 
                     }
             items.append(item)
         # More matches than gmail_max: the older ones are unlisted, not dealt with.
-        return store.Partial(items) if len(all_ids) > len(raw_ids) else items
+        out = store.Partial(items) if len(all_ids) > len(raw_ids) else store.Fetched(items)
+        out.answered = _replied(conn, settings, set(known or ()) - {i["external_id"] for i in items})
+        return out
     except Exception as exc:  # noqa: BLE001 - any failure is "cannot tell", not "empty"
         log.warning("inbound: gmail poll failed: %s", exc)
         return None
@@ -506,6 +510,21 @@ def _gmail_blocking(settings: dict, creds: dict, known: set[str] | None = None) 
             conn.logout()
         except Exception:  # noqa: BLE001
             pass
+
+
+def _replied(conn: Any, settings: dict, leaving: set[str]) -> frozenset:
+    """The Message-IDs among `leaving` (open mail no longer unread) that a sent mail replies to (audit A23).
+    Best effort: a failure here only makes them clear as "gone", it never fails the poll.
+    shortcut: Gmail only; a Mattermost reply still clears as "gone" until its poller checks Anze's own posts."""
+    if not leaving:
+        return frozenset()
+    try:
+        conn.select(f'"{settings["gmail_sent"]}"', readonly=True)
+        return frozenset(mid for mid in leaving if not mid.startswith("seq:")
+                         and (conn.search(None, "HEADER", "In-Reply-To", f'"{mid}"')[1][0] or b"").split())
+    except Exception as exc:  # noqa: BLE001 - "cannot tell" is "gone", as before
+        log.warning("inbound: gmail sent check failed: %s", exc)
+        return frozenset()
 
 
 _ASANA_ASSIGNED = re.compile(r"assigned you a task:\s*(?P<title>.+?)\s*(?:\[(?P<project>[^\[\]]+)\])?\s*$")

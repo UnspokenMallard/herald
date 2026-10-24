@@ -428,7 +428,7 @@ def test_truncated_fetch_clears_nothing():
         def login(self, *a): pass
         def select(self, *a, **k): pass
         def logout(self): pass
-        def search(self, *a): return "OK", [b"1 2 3"]
+        def search(self, *a): return ("OK", [b"9"]) if "In-Reply-To" in a else ("OK", [b"1 2 3"])
         def fetch(self, num, what):
             n = num if isinstance(num, str) else num.decode()
             raw = f"Message-ID: <m{n}@x>\r\nFrom: a@b.c\r\nSubject: s{n}\r\n\r\nbody".encode()
@@ -445,6 +445,13 @@ def test_truncated_fetch_clears_nothing():
         imaplib.IMAP4_SSL = real
     assert isinstance(capped, store.Partial) and len(capped) == 2
     assert not isinstance(whole, store.Partial) and len(whole) == 3
+    known = {"<m1@x>", "<old@x>", "seq:4"}
+    imaplib.IMAP4_SSL = FakeImap
+    try:
+        seen = inbound._gmail_blocking({**settings, "gmail_max": 5, "gmail_sent": "Sent"}, creds, known)
+    finally:
+        imaplib.IMAP4_SSL = real
+    assert seen.answered == {"<old@x>"}, seen.answered  # still unread or no Message-ID: not looked up
 
     async def partial_source(config):
         return capped
@@ -458,6 +465,12 @@ def test_truncated_fetch_clears_nothing():
         assert "inbound-truncated" in line and "0 cleared" in line
         assert len(inbound.waiting("gmail")) == 3  # the older unread mail is past the limit, not dealt with
         assert inbound.record("gmail", list(capped)) == (0, 1)  # a complete list still clears
+        replied = store.Fetched(capped[:1])
+        replied.answered = frozenset({capped[1]["external_id"]})
+        assert inbound.record("gmail", replied) == (0, 1)
+        by = {r["data"]["cleared_by"] for r in mr.query(kind=inbound.CLEARED)
+              if r["data"].get("external_id") == capped[1]["external_id"]}
+        assert "answered" in by, by  # a mail Anze replied to clears as answered (A23)
     finally:
         inbound.SOURCES["gmail"] = real_source
         wipe_signals()

@@ -22,7 +22,13 @@ CONFIG = ROOT / "config.toml"
 SECRETS = ROOT / "secrets"
 log = logging.getLogger("hermod")
 
-class Partial(list):
+class Fetched(list):
+    """A fetch result that can say why a signal left: `answered` holds the external ids Anze replied to, so
+    `inbound.record` clears them as "answered" rather than "gone" (audit A23). A plain list works too."""
+    answered: frozenset = frozenset()
+
+
+class Partial(Fetched):
     """A fetch result known to be incomplete (a page or per-channel limit was hit). It is recorded but
     must never clear the signals it does not name: `inbound.record` skips the `gone` sweep for it."""
 
