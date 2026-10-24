@@ -30,8 +30,12 @@ covers these rows too. The rule stays: this component measures or knows; Jarvis 
   watcher for Asana (96 open tasks) or TickTick (16 items).
 - **A28 (Phase 2, last)** `deliver()` app inbox (proactive design step 10), after A08 and A26.
 
+**Status 2026-10-25 (HUD task freyr-398c, merge with Jarvis):** A23's answered clear (d05a030) and the report Click link (bd2e576, for A34) are built; the Jarvis side of A23 and A28 (the HUD alert inbox) is in Jarvis. The `deliver()` refactor is planned work, not built.
+
 | When (earliest useful, not a deadline) | Step | Waits on |
 |---|---|---|
+| first answered mail after the freyr-398c merge | the mail's signal clears as answered, not gone | the merge |
+| first pushed report after the merge | its ntfy message carries the HUD `/?report=` Click link | the merge |
 | with Phase 2 | A23, then A28 | Phase 2 approval |
 
 ## A: advance the work
