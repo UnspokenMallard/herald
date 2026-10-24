@@ -1,9 +1,9 @@
-# Herald's config: the transport side of every channel between Anze and the machine (moved from
+# Hermod's config: the transport side of every channel between Anze and the machine (moved from
 # ~/.jarvis/config.toml on 2026-10-17, comments kept). What to say and when -- the ping's change gate,
 # interval, quiet hours, weekend rule, meeting guard, snooze, the briefing's cadence and the ladder's
 # `publish-*` / `save-draft` actions -- stays in Jarvis's config; here is only how a message goes out
 # and which sources are polled. Credentials are NOT here: ~/.herald/secrets/ (0600, never git).
-# Each channel's `enabled` is Herald's own master switch (content leaving the machine is opt-in), in
+# Each channel's `enabled` is Hermod's own master switch (content leaving the machine is opt-in), in
 # addition to Jarvis's: both must be on.
 
 [ping]
@@ -119,7 +119,7 @@ max_bytes = 3900
 timeout_s = 15
 
 [tasks]
-# TickTick tasks from actionable messages (herald/tasks.py, Anze 2026-10-23): Jarvis's triage judges a
+# TickTick tasks from actionable messages (hermod/tasks.py, Anze 2026-10-23): Jarvis's triage judges a
 # Mattermost DM/mention or work mail actionable and calls POST /task; the task lands in the Work list and
 # the next briefing names it. Create only, never edits or deletes.
 enabled = true

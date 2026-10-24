@@ -740,7 +740,7 @@ async def poll_one(name: str, config: Mapping[str, Any] | None = None) -> str:
     new, cleared = record(name, items)
     line = f"{name}: {len(items)} open, {new} new, {cleared} cleared"
     if isinstance(items, store.Partial):
-        # Herald never alerts: Jarvis raises `inbound-truncated` when a result line carries this token.
+        # Hermod never alerts: Jarvis raises `inbound-truncated` when a result line carries this token.
         log.warning("inbound: %s fetch hit its limit; nothing cleared", name)
         line += " (inbound-truncated: limit hit, nothing cleared)"
     return line

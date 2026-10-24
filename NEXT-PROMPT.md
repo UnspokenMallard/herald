@@ -38,10 +38,10 @@ covers these rows too. The rule stays: this component measures or knows; Jarvis 
 
 > Read `~/.herald/DESIGN.md` ("As built") and this file. Do the first row whose date has passed and report.
 > Rules: Herald never alerts, pings on its own or holds work; Jarvis triggers every poll and push and decides whether and
-> when. The ping stays counts-only: do not widen `herald/ping.py`'s vocabulary or named-line shapes, and never route report or
+> when. The ping stays counts-only: do not widen `hermod/ping.py`'s vocabulary or named-line shapes, and never route report or
 > briefing text through it. Nothing ever posts, sends, reacts or DMs as Anze: Gmail and Mattermost get drafts only (no SMTP,
 > no `/posts`). There is no fallback past Herald: nothing in the daemon talks to ntfy or reads a channel credential. A failed
-> poll returns None, never an empty list. Never add a granting verb to `herald.commands.VERBS`. Never put a credential in
+> poll returns None, never an empty list. Never add a granting verb to `hermod.commands.VERBS`. Never put a credential in
 > config.toml or memory. Never drop a table or delete a backup or a secret copy without Anze's confirmation. Restart the
 > daemon only with `~/.jarvis/restart.sh`; a config edit hot-reloads into the running daemon, so edit config and restart in one
 > step. Stop and tell me if anything differs from what this file expects.
@@ -50,7 +50,7 @@ covers these rows too. The rule stays: this component measures or knows; Jarvis 
 
 > Run `~/.herald/bin/herald health`, `~/.herald/bin/herald delivery`, `~/.herald/bin/herald inbound`,
 > `~/.herald/bin/herald commands`, `~/.herald/bin/install-launchd status` and
-> `~/.herald/.venv/bin/python ~/.herald/tests/test_herald.py`. Change nothing.
+> `~/.herald/.venv/bin/python ~/.herald/tests/test_hermod.py`. Change nothing.
 
 ## C: something is broken
 

@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 HOME = Path.home()
-H = Path(os.environ.get("HERALD_HOME", HOME / ".herald"))
+H = Path(os.environ.get("HERMOD_HOME", HOME / ".herald"))
 CREDS = Path(os.environ.get("TICKTICK_CREDS", HOME / ".config" / "ticktick-mcp" / "credentials.json"))
 ARTIFACT = H / "state" / "ticktick-tasks.json"
 API = os.environ.get("TICKTICK_API", "https://api.ticktick.com/open/v1")

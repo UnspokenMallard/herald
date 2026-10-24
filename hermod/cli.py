@@ -1,4 +1,4 @@
-"""Herald's CLI: `herald <command>`. Exit codes are what Jarvis's job scripts rely on.
+"""Hermod's CLI: `herald <command>`. Exit codes are what Jarvis's job scripts rely on.
 
   health                      the service's answer (what is on, whether a token exists)
   delivery [--json]           can the phone receive? exit 0 receiving, 1 not, 2 could not check

@@ -3,7 +3,7 @@
 Moved from Jarvis's daemon/ping.py on 2026-10-17 (Herald): the vocabulary, the shapes, the
 composers and the transport are here, enforced in code. *Whether and when* to ping (the change gate,
 `min_interval_s`, quiet hours, the weekend rule, the snooze, the meeting guard) stays in Jarvis,
-which sends integers and names to `POST /ping`; Herald builds the sentence, re-checks the finished
+which sends integers and names to `POST /ping`; Hermod builds the sentence, re-checks the finished
 body and refuses what is not content-free. The module text below is the original, incidents and all.
 
 The existing push sink is a Windows toast, chosen local-only on purpose: alert
@@ -105,7 +105,7 @@ _WORDS = {
     "my", "found", "a", "new", "task", "marked", "as", "critical",
     # The openers below (2026-10-05, "not always 'Jarvis here'").
     "quick", "update", "from", "heads", "up", "checking", "in", "hello", "it", "hi",
-    # Hermod, Herald's display name (2026-10-23): a fixed literal, like "jarvis".
+    # Hermod, Hermod's display name (2026-10-23): a fixed literal, like "jarvis".
     "hermod",
 }
 
@@ -131,7 +131,7 @@ def opener() -> str:
 
 
 def cfg(config: Mapping[str, Any] | None = None) -> dict:
-    """The transport settings of `[ping]` in Herald's config.toml. Whether and when to ping (the change
+    """The transport settings of `[ping]` in Hermod's config.toml. Whether and when to ping (the change
     gate, interval, quiet hours, weekends, snooze, meeting guard) is Jarvis's: it is not here."""
     config = config if config is not None else store.load_config()
     section = dict(config.get("ping") or {})
@@ -357,7 +357,7 @@ def buttons(settings: Mapping[str, Any], incident_id: int | None = None,
     that starts a diagnose session). It publishes nothing and carries no token; the HUD
     login still guards the page.
 
-    Jarvis knows which incident or review item is open; Herald only draws the buttons, so both
+    Jarvis knows which incident or review item is open; Hermod only draws the buttons, so both
     arrive as plain integers.
     """
     url, tok = str(settings.get("buttons_url") or ""), button_token()
@@ -402,7 +402,7 @@ def send(text: str, config: Mapping[str, Any] | None = None, incident_id: int | 
     """POST the body. Returns `{"delivered": bool, "reason": str}`; never raises.
 
     A body that fails `check` is refused, not sanitised: a ping that quietly strips the leak is a ping
-    that hides the bug that produced it. Herald never alerts, so the refusal is the `reason`
+    that hides the bug that produced it. Hermod never alerts, so the refusal is the `reason`
     ("not content-free") and Jarvis raises `ping-not-content-free` from it.
     """
     settings = cfg(config)

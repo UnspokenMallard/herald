@@ -28,7 +28,7 @@ from pathlib import Path
 
 HOME = Path.home()
 J = HOME / ".jarvis"
-H = Path(os.environ.get("HERALD_HOME", HOME / ".herald"))
+H = Path(os.environ.get("HERMOD_HOME", HOME / ".herald"))
 SECRETS = H / "secrets" / "asana.json"
 REPORT = J / "reports" / "asana" / "latest.md"  # a report: Jarvis's digests read it
 ARTIFACT = H / "state" / "asana-digest.json"

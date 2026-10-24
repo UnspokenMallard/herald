@@ -1,7 +1,7 @@
-"""Herald against a scratch store: the channel rules (the ping carries counts and nothing else, drafts
+"""Hermod against a scratch store: the channel rules (the ping carries counts and nothing else, drafts
 never send, a failed poll never empties the inbox, the command verbs grant nothing), the composers, the
 transport with a faked network, and the service's write guard.
-Run: ~/.herald/.venv/bin/python ~/.herald/tests/test_herald.py"""
+Run: ~/.herald/.venv/bin/python ~/.herald/tests/test_hermod.py"""
 import asyncio
 import email
 import json
@@ -11,13 +11,13 @@ import tempfile
 import time
 from pathlib import Path
 
-TMP = Path(tempfile.mkdtemp(prefix="herald-test-"))
-os.environ["HERALD_HOME"] = str(TMP)  # read at import: never the live store, never the live secrets
+TMP = Path(tempfile.mkdtemp(prefix="hermod-test-"))
+os.environ["HERMOD_HOME"] = str(TMP)  # read at import: never the live store, never the live secrets
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "server"))
 
-from herald import briefing, commands, delivery, drafts, inbound, mattermost, ping, reports, store, tasks  # noqa: E402
+from hermod import briefing, commands, delivery, drafts, inbound, mattermost, ping, reports, store, tasks  # noqa: E402
 
 ping._pick = lambda options: options[0]  # "Jarvis here": the opener is random in production
 
@@ -313,7 +313,7 @@ def test_gmail_drafts():
     assert drafts.drafts_mailbox([b'(\\HasNoChildren) "/" "INBOX"', b'(\\Drafts \\HasNoChildren) "/" "[Gmail]/Osnutki"']) == '"[Gmail]/Osnutki"'
     assert drafts.drafts_mailbox([b'(\\HasNoChildren) "/" "INBOX"']) is None
     # no SMTP anywhere: the module does not even import it
-    src = (ROOT / "herald" / "drafts.py").read_text()
+    src = (ROOT / "hermod" / "drafts.py").read_text()
     assert "smtplib" not in src and "SMTP" not in src.replace("There is no SMTP", "")
     assert asyncio.run(drafts.save("slack", {}, "x", {})).startswith("not saved - no drafts for")
     assert "no Gmail credential" in asyncio.run(drafts.save("gmail", {"reply_to": "a@b.c"}, "x", {}))  # no secrets/gmail.json here
@@ -544,7 +544,7 @@ def test_service():
         assert c.get("/health").json()["ok"] is True
         assert c.post("/ping", json={"kind": "counts", "counts": {}}, headers={"origin": "http://evil.example"}).status_code == 403
         assert c.post("/ping", json={"kind": "free-text"}).status_code == 400
-        out = c.post("/ping", json={"kind": "counts", "counts": {"inbound": 1}}).json()  # herald config in scratch is empty: ping is off
+        out = c.post("/ping", json={"kind": "counts", "counts": {"inbound": 1}}).json()  # hermod config in scratch is empty: ping is off
         assert out["delivered"] is False and out["reason"] == "ping disabled" and ping.check(out["body"])
         assert c.post("/toast", json={"title": "t"}, headers={"origin": "http://evil.example"}).status_code == 403
         assert c.get("/inbound").json() == {"waiting": []}
@@ -558,8 +558,8 @@ def test_service():
 
 def test_cli_exit_codes():
     import subprocess
-    out = subprocess.run([sys.executable, "-c", f"import sys; sys.path.insert(0, {str(ROOT)!r}); from herald.cli import main; sys.exit(main(['ping-test']))"],
-                         capture_output=True, text=True, env={**os.environ, "HERALD_HOME": str(TMP)})
+    out = subprocess.run([sys.executable, "-c", f"import sys; sys.path.insert(0, {str(ROOT)!r}); from hermod.cli import main; sys.exit(main(['ping-test']))"],
+                         capture_output=True, text=True, env={**os.environ, "HERMOD_HOME": str(TMP)})
     assert out.returncode == 0 and "safe     : True" in out.stdout, out.stderr
 
 
@@ -632,7 +632,7 @@ def test_task_creation_is_once_per_message():
         assert len(sent) == before + 2
         try:
             inbound.update([sid], task_id="x")
-            raise AssertionError("task_id is Herald's, not a judgement column")
+            raise AssertionError("task_id is Hermod's, not a judgement column")
         except ValueError:
             pass
     finally:

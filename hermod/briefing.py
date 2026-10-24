@@ -12,7 +12,7 @@ Moved from Jarvis's daemon/briefing.py on 2026-10-17 (Herald). Asked for on 2026
 
 Jarvis judges each message (the brain calls), drafts replies, decides when a briefing is due and
 whether the gates and the ladder (`publish-briefing`) allow it, and records what became of each
-signal. **Herald says it**: the sentence frames, the opener, the cut to `max_bytes` (urgent lines are
+signal. **Hermod says it**: the sentence frames, the opener, the cut to `max_bytes` (urgent lines are
 never cut) and the POST to the `jarvis` topic. The brain writes the headlines only.
 
 ### Why this is not ping.py
@@ -172,7 +172,7 @@ def send(new: list[dict], reminders: list[dict], config: Mapping[str, Any] | Non
     """
     settings = cfg(config)
     if not settings["enabled"]:
-        return {"delivered": False, "urgent": False, "bytes": 0, "reason": "[briefing] disabled in Herald's config"}
+        return {"delivered": False, "urgent": False, "bytes": 0, "reason": "[briefing] disabled in Hermod's config"}
     body, urgent, click = compose(new, reminders, int(settings["max_bytes"]))
     ok = _post(settings, body, urgent, click)
     return {"delivered": ok, "urgent": urgent, "bytes": len(body.encode("utf-8")),

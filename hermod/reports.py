@@ -108,7 +108,7 @@ def push(title: str, text: str, spoken: str | None = None, config: Mapping[str, 
     """
     settings = cfg(config)
     if not settings["enabled"]:
-        return {"pushed": False, "parts": 0, "reason": "[reports] disabled in Herald's config"}
+        return {"pushed": False, "parts": 0, "reason": "[reports] disabled in Hermod's config"}
     if not text.strip() and not (spoken or "").strip():
         return {"pushed": False, "parts": 0, "reason": "empty"}
     body = spoken or f"{ping.opener()}, your {title} is ready.\n\n{text}"

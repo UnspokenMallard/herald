@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Install (or reinstall) Herald's launchd agents from ~/.herald/launchd. `install-launchd status` shows them.
+# Install (or reinstall) Hermod's launchd agents from ~/.herald/launchd. `install-launchd status` shows them.
 set -eu
 DIR=$HOME/.herald/launchd
 AGENTS=$HOME/Library/LaunchAgents

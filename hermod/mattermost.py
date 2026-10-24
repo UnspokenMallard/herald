@@ -1,4 +1,4 @@
-"""Mattermost: what is waiting on the user there, and the one write Herald makes.
+"""Mattermost: what is waiting on the user there, and the one write Hermod makes.
 
 Moved from Jarvis's daemon/mattermost.py on 2026-10-17 (Herald); the text is the original.
 

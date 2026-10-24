@@ -29,9 +29,9 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-HERALD = Path(os.environ.get("HERALD_HOME", Path.home() / ".herald"))
-SECRETS = HERALD / "secrets" / "calendar.json"
-ARTIFACT = HERALD / "state" / "calendar.json"
+HERMOD = Path(os.environ.get("HERMOD_HOME", Path.home() / ".herald"))
+SECRETS = HERMOD / "secrets" / "calendar.json"
+ARTIFACT = HERMOD / "state" / "calendar.json"
 HORIZON_S = 24 * 3600
 _DAYS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"]
 

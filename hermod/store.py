@@ -1,8 +1,8 @@
-"""Herald's store: state/herald.db (WAL), secrets, config.toml.
+"""Hermod's store: state/herald.db (WAL), secrets, config.toml.
 
 Paths are module attributes read at call time, so a test points them at a scratch directory
 (`store.ROOT`, `store.STATE`, `store.DB_PATH`, `store.CONFIG`, `store.SECRETS`) the way Jarvis's
-selftest does with `core.ROOT`. Stdlib only: imported by Jarvis's venv, Mind's venv and Herald's own.
+selftest does with `core.ROOT`. Stdlib only: imported by Jarvis's venv, Mimir's venv and Hermod's own.
 
 Secrets live in `~/.herald/secrets/` (0600, never git: `.gitignore` names the directory). There is
 deliberately no config key for any credential: config.toml is committed.
@@ -17,12 +17,12 @@ import sqlite3
 import tomllib
 from pathlib import Path
 
-ROOT = Path(os.environ.get("HERALD_HOME", Path.home() / ".herald"))
+ROOT = Path(os.environ.get("HERMOD_HOME", Path.home() / ".herald"))
 STATE = ROOT / "state"
 DB_PATH = STATE / "herald.db"
 CONFIG = ROOT / "config.toml"
 SECRETS = ROOT / "secrets"
-log = logging.getLogger("herald")
+log = logging.getLogger("hermod")
 
 class Partial(list):
     """A fetch result known to be incomplete (a page or per-channel limit was hit). It is recorded but
@@ -63,7 +63,7 @@ def secret(name: str) -> dict | None:
     except FileNotFoundError:
         return None
     except (OSError, ValueError) as exc:
-        log.warning("herald: %s is unreadable: %s", path.name, exc)
+        log.warning("hermod: %s is unreadable: %s", path.name, exc)
         return None
     return doc if isinstance(doc, dict) else None
 

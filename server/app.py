@@ -1,12 +1,12 @@
-"""Herald's HTTP service on 127.0.0.1:3026 (launchd com.herald.server): every channel between Anze and
+"""Hermod's HTTP service on 127.0.0.1:3026 (launchd com.herald.server): every channel between Anze and
 the machine, for callers that are not Python on this Mac (the HUD, scripts) and for Jarvis, which sends
 its pings, reports, briefings, drafts and alert toasts through it so the credentials live in this one
 process and the channel rules are enforced in one place. Python readers (Jarvis, Mind) import the
-`herald` library directly for the signal table and the phone-state check (same code, same store).
+`hermod` library directly for the signal table and the phone-state check (same code, same store).
 
 Localhost only: the host check refuses DNS rebinding, and a write carrying an Origin header (any browser
-page) is refused, so no web page can make Herald say or save anything through Anze's browser.
-Herald never alerts, pings on its own or holds work: Jarvis triggers every poll and every push.
+page) is refused, so no web page can make Hermod say or save anything through Anze's browser.
+Hermod never alerts, pings on its own or holds work: Jarvis triggers every poll and every push.
 It never posts, sends, reacts or DMs as Anze: Gmail and Mattermost get drafts only.
 """
 from __future__ import annotations
@@ -16,7 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from herald import briefing, commands, delivery, drafts, inbound, ping, reports, store, tasks, toast  # noqa: E402
+from hermod import briefing, commands, delivery, drafts, inbound, ping, reports, store, tasks, toast  # noqa: E402
 from starlette.applications import Starlette  # noqa: E402
 from starlette.concurrency import run_in_threadpool  # noqa: E402
 from starlette.middleware import Middleware  # noqa: E402

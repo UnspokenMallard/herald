@@ -1,7 +1,7 @@
 """The desktop channel: a macOS notification through osascript (Notification Center).
 
 Moved from Jarvis's daemon/core.py `_toast` on 2026-10-17 (Herald). This is the alert sink -- Jarvis
-decides which alerts reach it (severity, cooldown, backoff, postponing) and Herald only shows them.
+decides which alerts reach it (severity, cooldown, backoff, postponing) and Hermod only shows them.
 Local to this Mac on purpose: alert text carries file paths, job names and error strings, and none of
 that goes to a third-party notification service. It is NOT the phone ping and never reaches ntfy.
 """

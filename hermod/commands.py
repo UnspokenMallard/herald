@@ -5,8 +5,8 @@ this is the one channel back, and `AUTONOMY-LADDER-DESIGN.md` §5 (Jarvis) rules
 shortcut, a file the daemon reads back as a yes. This channel exists inside that rule rather than
 around it, and it grants almost nothing.
 
-The split: **Herald receives and validates**; **Jarvis executes the verb under its own ladder** and
-reports the outcome back (`finish`). Herald decides nothing about what a verb does.
+The split: **Hermod receives and validates**; **Jarvis executes the verb under its own ladder** and
+reports the outcome back (`finish`). Hermod decides nothing about what a verb does.
 
   * The verb set is closed (`VERBS`). An unknown verb is recorded `unknown` and never handed to
     Jarvis. Adding a verb is a security decision, not a convenience; Jarvis's selftest asserts this
@@ -62,7 +62,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_commands_message ON commands(message_id);
 CREATE INDEX IF NOT EXISTS ix_commands_received ON commands(received_at);
 """
 
-# Outcomes Herald writes itself; Jarvis's are done, failed, refused, no-match.
+# Outcomes Hermod writes itself; Jarvis's are done, failed, refused, no-match.
 PENDING, RUNNING = "pending", "running"
 
 

@@ -1,5 +1,5 @@
 #!/Users/anzes/.herald/.venv/bin/python
-"""One-off: copy Herald's data out of Jarvis (2026-10-17). Copies, never moves: Jarvis's tables and
+"""One-off: copy Hermod's data out of Jarvis (2026-10-17). Copies, never moves: Jarvis's tables and
 files stay where they are until Anze confirms they can go.
 
   * `signals` and `commands` rows from ~/.jarvis/jarvis.db into state/herald.db, ids kept (the
@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from herald import commands, inbound, store  # noqa: E402
+from hermod import commands, inbound, store  # noqa: E402
 
 J = Path.home() / ".jarvis"
 SECRETS = ("ntfy", "gmail", "mattermost", "asana", "calendar")

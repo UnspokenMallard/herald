@@ -1,4 +1,4 @@
-"""TickTick tasks from actionable signals: the one outward write Herald makes besides drafts and the phone.
+"""TickTick tasks from actionable signals: the one outward write Hermod makes besides drafts and the phone.
 
 Added 2026-10-23 (Anze): when a Mattermost DM or mention, or a work mail, asks him to do something or
 reports a bug for him to fix, Jarvis's triage judges it `actionable` and calls `POST /task`; the task lands
@@ -42,7 +42,7 @@ def cfg(config: Mapping[str, Any] | None = None) -> dict:
 
 
 def content(row: Mapping[str, Any], note: str) -> str:
-    """Who, where, when, the gist and the link. The message text itself stays in Herald."""
+    """Who, where, when, the gist and the link. The message text itself stays in Hermod."""
     meta = json.loads(row["meta"]) if row["meta"] else {}
     when = datetime.fromtimestamp(row["external_ts"] or row["first_seen"]).strftime("%Y-%m-%d")
     lines = [f"From {row['actor'] or 'someone'}, {meta.get('where') or row['source']}, {when}."]
@@ -86,7 +86,7 @@ def create(signal_id: int, title: str, note: str = "", config: Mapping[str, Any]
     settings = cfg(config)
     title = " ".join(str(title).split())[:200]
     if not settings["enabled"]:
-        return {"created": False, "task_id": None, "reason": "tasks are off in Herald's config"}
+        return {"created": False, "task_id": None, "reason": "tasks are off in Hermod's config"}
     if not title:
         return {"created": False, "task_id": None, "reason": "no title"}
     inbound.ensure_schema()

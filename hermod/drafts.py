@@ -1,8 +1,8 @@
-"""Reply drafts: the only thing Herald writes to Gmail or Mattermost.
+"""Reply drafts: the only thing Hermod writes to Gmail or Mattermost.
 
 Moved from Jarvis's daemon/drafts.py on 2026-10-17 (Herald). The text is the original; what changed
 is who decides: Jarvis checks the `save-draft` action on the autonomy ladder, picks the text (the
-brain writes it) and calls `POST /draft`; Herald holds the credentials and the rule.
+brain writes it) and calls `POST /draft`; Hermod holds the credentials and the rule.
 
 Asked for on 2026-10-01: "If there is a need for me to respond, prepare a
 message or an email and keep the language ... Never send any messages on
@@ -12,7 +12,7 @@ write to both services.
 
 What holds "never send", in code rather than in a promise:
 
-  * **Gmail.** There is no SMTP anywhere in Herald. The one IMAP write is
+  * **Gmail.** There is no SMTP anywhere in Hermod. The one IMAP write is
     APPEND, to the mailbox the server itself flags `\\Drafts` (RFC 6154) --
     found by attribute, never by name, because Gmail localises folder names.
     A message in Drafts goes nowhere until a person presses Send.
