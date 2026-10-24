@@ -13,9 +13,17 @@ from pathlib import Path
 
 TMP = Path(tempfile.mkdtemp(prefix="hermod-test-"))
 os.environ["HERMOD_HOME"] = str(TMP)  # read at import: never the live store, never the live secrets
+os.environ["MEMORY_DB"] = str(TMP / "memory.db")  # Mimir's store, a scratch one
+os.environ["MIMIR_OUTBOX"] = str(TMP / "outbox")
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "server"))
+sys.path.insert(0, str(Path.home() / ".mind" / "mimir"))
+
+import mem  # noqa: E402
+import mimirrecords as mr  # noqa: E402
+
+mr.use_local(mem.connect(shared=True))  # calls go to the scratch store in-process, no HTTP
 
 from hermod import briefing, commands, delivery, drafts, inbound, mattermost, ping, reports, store, tasks  # noqa: E402
 
@@ -41,8 +49,12 @@ def fake_net(sent: list):
     return urlopen
 
 
+def wipe_signals():
+    for row in mr.query(kind=inbound.SIGNAL, limit=5000):
+        mr.delete("hermod", inbound.SIGNAL, row["key"])
+
+
 def test_content_free_ping():
-    assert store.DB_PATH == TMP / "state" / "herald.db"
     empty = ping.compose({"review": 0, "inbound": 0, "incidents": 0})
     assert empty.endswith("Nothing is waiting for you.") and ping.is_content_free(empty)
     body = ping.compose({"review": 2, "inbound": 3, "incidents": 1})
@@ -346,11 +358,12 @@ def test_inbound_clears_only_on_a_list():
         assert await inbound.fetch_github({}) is None
         await inbound.poll_one("github", {})
         assert len(inbound.waiting("github")) == 2  # an outage must not erase the inbox
-        with store.connect() as conn:
-            conn.execute("UPDATE signals SET first_seen = ?, last_seen = ? WHERE cleared_at IS NULL",
-                         (time.time() - 400 * 86400,) * 2)
-        inbound.prune(retain_days=30)
+        old = time.time() - 400 * 86400
+        for row in inbound.waiting("github"):
+            mr.patch("hermod", inbound.SIGNAL, row["id"], {"first_seen": old, "last_seen": old}, at=time.time() + 1)
         assert len(inbound.waiting("github")) == 2  # an open signal survives at any age
+        gone = mr.query(kind=inbound.CLEARED)
+        assert len(gone) == 1 and gone[0]["data"]["cleared_by"] == "gone"  # the cleared one is kept for 30 days
 
     try:
         asyncio.run(scenario())
@@ -360,8 +373,7 @@ def test_inbound_clears_only_on_a_list():
     assert inbound.gmail_credentials() is None
     (TMP / "secrets" / "gmail.json").write_text('{"user": "a@b.c"}')
     assert inbound.gmail_credentials() is None  # missing app_password
-    with store.connect() as conn:
-        conn.execute("DELETE FROM signals")
+    wipe_signals()
 
 
 def test_truncated_fetch_clears_nothing():
@@ -404,8 +416,7 @@ def test_truncated_fetch_clears_nothing():
         assert inbound.record("gmail", list(capped)) == (0, 1)  # a complete list still clears
     finally:
         inbound.SOURCES["gmail"] = real_source
-        with store.connect() as conn:
-            conn.execute("DELETE FROM signals")
+        wipe_signals()
 
 
 def test_inbound_judgement_columns():
@@ -426,10 +437,9 @@ def test_inbound_judgement_columns():
             pass
     assert inbound.adopt_announced(time.time() + 1) == 1 and inbound.open_rows()[0]["notified_at"] is not None
     inbound.record("gmail", [])
-    with store.connect() as conn:
-        kept_text = conn.execute("SELECT COUNT(*) FROM signals WHERE body IS NOT NULL OR meta IS NOT NULL").fetchone()[0]
-        conn.execute("DELETE FROM signals")
-    assert kept_text == 0  # a cleared signal keeps no message text
+    cleared = mr.query(kind=inbound.CLEARED, limit=5000)
+    assert cleared and not [r for r in cleared if "body" in r["data"] or "meta" in r["data"]]  # a cleared signal keeps no message text
+    wipe_signals()
 
 
 def test_asana_assignment():
@@ -548,7 +558,7 @@ def test_service():
         assert out["delivered"] is False and out["reason"] == "ping disabled" and ping.check(out["body"])
         assert c.post("/toast", json={"title": "t"}, headers={"origin": "http://evil.example"}).status_code == 403
         assert c.get("/inbound").json() == {"waiting": []}
-        assert c.post("/inbound/update", json={"ids": [1], "fields": {"title": "x"}}).status_code == 400  # not a judgement column
+        assert c.post("/inbound/update", json={"ids": ["gmail:1"], "fields": {"title": "x"}}).status_code == 400  # not a judgement column
         assert c.post("/run/command-poll", json={}).json()["state"] == "disabled"
         assert c.post("/commands/claim", json={}).json() == {"commands": []}
         assert c.get("/delivery").json()["state"] in (delivery.UNKNOWN, delivery.CONNECTED, delivery.DISCONNECTED)
@@ -638,6 +648,49 @@ def test_task_creation_is_once_per_message():
     finally:
         tasks._post = real
         inbound.record("mattermost", [])
+
+
+def test_mimir_down_loses_nothing():
+    from starlette.testclient import TestClient
+
+    import app as server
+
+    inbound.record("gmail", [{"external_id": "<d1>", "kind": "mail", "title": "d", "url": "", "actor": "a"}])
+    sid = inbound.open_rows()[0]["id"]
+
+    async def fetcher(config):
+        return [{"external_id": "<d1>", "kind": "mail", "title": "d"}]
+
+    inbound.SOURCES["down"] = fetcher
+    os.environ["MIMIR_URL"] = "none"  # Mimir answers nothing
+    try:
+        try:
+            inbound.waiting()
+            assert False, "a read must say Mimir is down, not return an empty inbox"
+        except mr.MimirDown:
+            pass
+        assert "not recorded (Mimir unreachable)" in asyncio.run(inbound.poll_one("down", {}))
+        try:
+            commands.receive_message({"id": "down1", "message": "snooze 3", "time": time.time()})
+            assert False, "a command is not queued for later"
+        except mr.MimirDown:
+            pass
+        assert mr.pending("hermod")["pending"] == 0
+        assert inbound.update([sid], critical=1, headline="queued") == 1  # a judgement waits in the outbox
+        assert mr.pending("hermod")["pending"] == 1
+        with TestClient(server.app, base_url="http://127.0.0.1:3026") as c:
+            out = c.get("/inbound")
+            assert out.status_code == 503 and "Mimir is unreachable" in out.json()["error"]
+    finally:
+        del os.environ["MIMIR_URL"]
+        inbound.SOURCES.pop("down", None)
+    assert mr.flush("hermod") == 1 and mr.pending("hermod")["pending"] == 0
+    row = inbound.open_rows()[0]
+    assert row["critical"] == 1 and row["headline"] == "queued"
+    assert commands.receive_message({"id": "down1", "message": "snooze 3", "time": time.time()})["outcome"] == "pending"
+    for c in commands.claim():
+        commands.finish(c["id"], "done", "")
+    wipe_signals()
 
 
 if __name__ == "__main__":
