@@ -2,7 +2,7 @@
 
 Moved from Jarvis's daemon/inbound.py on 2026-10-17 (Herald): the pollers, the secrets they read, the
 `signals` table (state/herald.db) and what clears a row. What stays in Jarvis is judgement -- is a task
-critical, does a message need a reply, what to say -- which the brain and the local model do and which
+critical, does a message need a reply, what to say -- which the brain does and which
 Jarvis writes back with `update()`. The text below is the original.
 
 Every event source this daemon has ever had is local -- the spool, three watched
