@@ -74,7 +74,13 @@ point), `jobs/` (the two feed scripts), `config.toml`, `tests/test_hermod.py` (1
   `~/.jarvis/secrets/` to `~/.herald/secrets/`: ntfy, gmail, mattermost, asana (the Jarvis copies stay until Anze confirms).
   State files `asana-digest.json`, `asana-first-critical.json`, `asana-tasks.json`, `calendar.json` now live in `~/.herald/state/`;
   the HUD (`HERALD` in `hud/lib/util.js`), Mimir's attention feed and people sync, `weekly-changes.py` and the ping's meeting
-  guard read them from there. The HUD reads the signal table from `herald.db`.
+  guard read them from there.
+- **Storage (2026-10-24).** Hermod has no database. Signals and commands are Mimir records (`hermod.signal`, `hermod.signal_cleared`
+  for 30 days, `hermod.command`, `hermod.task` for 90 days), written and read through `mimirrecords` (Mimir's `/api/records`).
+  A signal's id is its record key `<source>:<external_id>`. Judgement writes and poll results that cannot be sent wait in
+  `state/outbox.jsonl` and replay when Mimir returns; a command is never queued (a late-run command is unwanted), so
+  `receive` reports `failed` and the next poll reads the ntfy message again. Reads raise `MimirDown`; the service answers 503.
+  `~/.mind/tools/import-records.py hermod` brings the old `herald.db` rows over and renames it `herald.db.archived-2026-10-24`.
 - **The ping split (Anze's call).** Hermod = the vocabulary, the one-line shapes, the sentence frames in Jarvis's voice, the
   buttons, the content-free check and the POST (`hermod/ping.py`). Jarvis = whether and when: the change gate and interval
   floor, quiet hours, the weekend rule, the snooze, the meeting guard, what is counted (`daemon/ping.py`). Jarvis sends integers

@@ -54,8 +54,8 @@ covers these rows too. The rule stays: this component measures or knows; Jarvis 
 
 ## C: something is broken
 
-> A channel to the phone, the signal table or the Herald service broke. First, do not delete `state/herald.db`, a backup
-> or a secret: they are the evidence. Copy the db with `sqlite3 .backup`, read `~/.herald/state/logs/server.log` and
+> A channel to the phone, the signal table or the Herald service broke. First, do not delete `state/outbox.jsonl`, `state/outbox.rejected.jsonl`,
+> an archived `herald.db.archived-2026-10-24` or a secret: they are the evidence. Read `~/.herald/state/logs/server.log` and
 > `~/.jarvis/logs/jarvis.log`, run `curl -s http://127.0.0.1:3026/health` and `~/.jarvis/.venv/bin/python
 > ~/.jarvis/status.py`, and report before fixing. Do not restart the service before reading its log. `git -C ~/.jarvis log`
 > shows the cutover commit; `jarvis.db.bak-herald` and the untouched `signals` / `commands` tables hold the pre-cutover rows.
