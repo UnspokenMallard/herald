@@ -8,7 +8,7 @@ phone's ntfy user can read and only the daemon's can write, on the self-hosted n
 machine. ping.py's privacy decision is about third-party servers; nothing here reaches one. The
 server has no upstream relay configured, and the phone connects to it directly through Caddy.
 
-Moved from Jarvis's daemon/reports.py on 2026-10-17 (Herald). What stays in Jarvis, because it
+Moved from Jarvis's daemon/reports.py on 2026-10-17 (Hermod). What stays in Jarvis, because it
 decides *whether and when*: that a report is **fresh** (written within the job's `max_age_s`: a job
 that failed and left last week's file behind must not be delivered as this morning's report), the
 quiet hours, the `publish-report` action on the autonomy ladder (a refusal is reported, never worked

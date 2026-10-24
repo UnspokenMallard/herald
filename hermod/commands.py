@@ -1,6 +1,6 @@
 """The phone -> machine command channel, transport only: receive, validate, record, hand over.
 
-Moved from Jarvis's daemon/command.py on 2026-10-17 (Herald). Everything else here points outward;
+Moved from Jarvis's daemon/command.py on 2026-10-17 (Hermod). Everything else here points outward;
 this is the one channel back, and `AUTONOMY-LADDER-DESIGN.md` §5 (Jarvis) rules out the obvious
 shortcut, a file the daemon reads back as a yes. This channel exists inside that rule rather than
 around it, and it grants almost nothing.

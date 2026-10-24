@@ -1,6 +1,6 @@
 """Briefings: Jarvis telling the user what came in, in its own voice -- the voice and the delivery.
 
-Moved from Jarvis's daemon/briefing.py on 2026-10-17 (Herald). Asked for on 2026-10-01:
+Moved from Jarvis's daemon/briefing.py on 2026-10-17 (Hermod). Asked for on 2026-10-01:
 
     "The notifications should look like a personal assistant named Jarvis is
     trying to get me up to date on what is going on. If there is just a new

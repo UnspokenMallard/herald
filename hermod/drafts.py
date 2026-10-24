@@ -1,6 +1,6 @@
 """Reply drafts: the only thing Hermod writes to Gmail or Mattermost.
 
-Moved from Jarvis's daemon/drafts.py on 2026-10-17 (Herald). The text is the original; what changed
+Moved from Jarvis's daemon/drafts.py on 2026-10-17 (Hermod). The text is the original; what changed
 is who decides: Jarvis checks the `save-draft` action on the autonomy ladder, picks the text (the
 brain writes it) and calls `POST /draft`; Hermod holds the credentials and the rule.
 

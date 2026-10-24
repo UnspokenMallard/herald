@@ -51,7 +51,7 @@ Stays in Jarvis: what to say and when (the alert-to-ping decision, `reminders.py
 
 1. Read the docstrings of every module listed: most carry an incident that shaped them.
 2. Map every caller of `ping.send`, `reports.*`, `drafts.*`, `inbound.*`, `briefing.*` and the
-   ntfy topics (Jarvis, HUD `notify.js`, scripts, Mind).
+   ntfy topics (Jarvis, HUD `notify.js`, scripts, Mimir).
 3. Move secrets with their permissions, then outbound, then inbound, then commands.
 4. Keep the delivery check passing throughout: a channel that silently stops is the failure
    this code was written against (twice in September).
@@ -67,7 +67,7 @@ point), `jobs/` (the two feed scripts), `config.toml`, `tests/test_hermod.py` (1
 - **Library vs service.** Every send goes through the service on `127.0.0.1:3026`, so the credentials live in this one process
   and the rules are enforced in one place: `/ping`, `/ping/hud`, `/report`, `/briefing`, `/draft`, `/toast`, `/run/inbound-poll`,
   `/run/command-poll`, `/commands/claim`, `/commands/{id}/ack`, `/inbound/update`; reads `/health`, `/delivery`, `/inbound`,
-  `/commands`. Python readers (Jarvis, Mind) import the library for the signal table and the phone-state check, as for Fafnir
+  `/commands`. Python readers (Jarvis, Mimir) import the library for the signal table and the phone-state check, as for Fafnir
   and Heimdall. Writes refuse an `Origin` header and any host but loopback.
 - **Moved with their rows** (copied; the old tables stay in `jarvis.db` until Anze confirms dropping them; backup
   `~/.jarvis/jarvis.db.bak-herald`, deleted 2026-10-18): `signals` (40, ids kept) and `commands` (6) into `state/herald.db`. Secrets copied (0600) from
@@ -116,4 +116,4 @@ a duplicate. Needs the TickTick MCP token (`~/.config/ticktick-mcp/credentials.j
 Anze reads in Mattermost before the poll never becomes a signal (`mattermost.unread_items` only lists unread), so it gets no task.
 After merging: restart `com.herald.server` (`bin/install-launchd`) so `/task` exists.
 
-Only a message that names Anze makes a task (`tasks.addressed`, enforced in Herald): a 1:1 DM, a mention, or mail with his address in To (`meta.to`). Group messages, Cc and list mail get none.
+Only a message that names Anze makes a task (`tasks.addressed`, enforced in Hermod): a 1:1 DM, a mention, or mail with his address in To (`meta.to`). Group messages, Cc and list mail get none.

@@ -1,7 +1,7 @@
 """Hermod's HTTP service on 127.0.0.1:3026 (launchd com.herald.server): every channel between Anze and
 the machine, for callers that are not Python on this Mac (the HUD, scripts) and for Jarvis, which sends
 its pings, reports, briefings, drafts and alert toasts through it so the credentials live in this one
-process and the channel rules are enforced in one place. Python readers (Jarvis, Mind) import the
+process and the channel rules are enforced in one place. Python readers (Jarvis, Mimir) import the
 `hermod` library directly for the signal table and the phone-state check (same code, same store).
 
 Localhost only: the host check refuses DNS rebinding, and a write carrying an Origin header (any browser

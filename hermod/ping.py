@@ -1,6 +1,6 @@
 """A push that carries a count and nothing else.
 
-Moved from Jarvis's daemon/ping.py on 2026-10-17 (Herald): the vocabulary, the shapes, the
+Moved from Jarvis's daemon/ping.py on 2026-10-17 (Hermod): the vocabulary, the shapes, the
 composers and the transport are here, enforced in code. *Whether and when* to ping (the change gate,
 `min_interval_s`, quiet hours, the weekend rule, the snooze, the meeting guard) stays in Jarvis,
 which sends integers and names to `POST /ping`; Hermod builds the sentence, re-checks the finished

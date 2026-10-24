@@ -1,6 +1,6 @@
 """Mattermost: what is waiting on the user there, and the one write Hermod makes.
 
-Moved from Jarvis's daemon/mattermost.py on 2026-10-17 (Herald); the text is the original.
+Moved from Jarvis's daemon/mattermost.py on 2026-10-17 (Hermod); the text is the original.
 
 Asked for on 2026-10-01: "add this to ntfy service". The signals are direct
 messages, group messages and posts that mention the user by name (Anze's
@@ -21,7 +21,7 @@ a POST to `/posts` is refused before it reaches the network.
 
 A signal is a post created after the channel's `last_viewed_at`. Viewing the
 channel in any client moves that mark, the next poll no longer returns the
-post, and `inbound.record()` (Herald's) clears it. Measured 2026-10-01: collapsed reply
+post, and `inbound.record()` (Hermod's) clears it. Measured 2026-10-01: collapsed reply
 threads are off for this account (`collapsed_reply_threads = off`), so a
 channel's mark covers its threads too -- there is no separate thread mark to
 follow. Same three-valued rule as every other source: any failure is `None`,
