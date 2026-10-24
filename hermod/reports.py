@@ -75,7 +75,7 @@ def split(text: str, max_bytes: int) -> list[str]:
     return [part for part in parts if part.strip()]
 
 
-def _post(settings: Mapping[str, Any], body: str, title: str) -> None:
+def _post(settings: Mapping[str, Any], body: str, title: str, click: str = "") -> None:
     """One message. Raises on any failure."""
     url = f"{str(settings['base_url']).rstrip('/')}/{settings['topic']}"
     request = urllib.request.Request(
@@ -89,6 +89,8 @@ def _post(settings: Mapping[str, Any], body: str, title: str) -> None:
             "Tags": "memo",
             "Priority": str(settings["priority"]),
             "Content-Type": "text/plain; charset=utf-8",
+            # Tapping opens the report in the HUD, which records that it was read (audit A34).
+            **({"Click": click} if click.startswith("https://") else {}),
         },
     )
     bearer = ping.token()
@@ -99,7 +101,7 @@ def _post(settings: Mapping[str, Any], body: str, title: str) -> None:
             raise RuntimeError(f"ntfy answered HTTP {resp.status}")
 
 
-def push(title: str, text: str, spoken: str | None = None, config: Mapping[str, Any] | None = None) -> dict:
+def push(title: str, text: str, spoken: str | None = None, config: Mapping[str, Any] | None = None, click: str = "") -> dict:
     """Publish one report. `spoken` is the report rewritten as prose (Jarvis narrates it); without it
     the file's `text` goes as written, under a one-line intro from Jarvis's voice.
 
@@ -115,5 +117,5 @@ def push(title: str, text: str, spoken: str | None = None, config: Mapping[str, 
     parts = split(body, int(settings["max_bytes"]))
     for index, part in enumerate(parts, 1):
         label = f"Jarvis: {title}" + (f" ({index}/{len(parts)})" if len(parts) > 1 else "")
-        _post(settings, part, label)
+        _post(settings, part, label, click)
     return {"pushed": True, "parts": len(parts), "reason": ""}

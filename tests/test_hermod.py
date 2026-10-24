@@ -250,6 +250,9 @@ def test_reports():
         out = reports.push("narrated", text, spoken="Jarvis here, all quiet.", config=cfg)
         assert out["pushed"] and sent[0][2] == "Jarvis here, all quiet."
         sent.clear()
+        reports.push("linked", "x", config=cfg, click="https://hud/?report=a")
+        assert sent[0][1].get("Click") == "https://hud/?report=a"
+        sent.clear()
         assert reports.push("off", text, config={"reports": {"enabled": False}})["pushed"] is False and not sent
         assert reports.push("empty", " ", config=cfg)["reason"] == "empty"
     finally:

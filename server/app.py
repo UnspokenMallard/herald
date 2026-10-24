@@ -83,7 +83,7 @@ def do_ping_persona(b: dict) -> dict:
 
 
 def do_report(b: dict) -> dict:
-    return reports.push(str(b["title"]), str(b.get("text") or ""), b.get("spoken"))
+    return reports.push(str(b["title"]), str(b.get("text") or ""), b.get("spoken"), click=str(b.get("click") or ""))
 
 
 def do_briefing(b: dict) -> dict:
