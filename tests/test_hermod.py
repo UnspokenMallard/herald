@@ -9,6 +9,7 @@ import os
 import sys
 import tempfile
 import time
+from datetime import datetime
 from pathlib import Path
 
 TMP = Path(tempfile.mkdtemp(prefix="hermod-test-"))
@@ -52,6 +53,26 @@ def fake_net(sent: list):
 def wipe_signals():
     for row in mr.query(kind=inbound.SIGNAL, limit=5000):
         mr.delete("hermod", inbound.SIGNAL, row["key"])
+
+
+def test_local_ts_in_the_repeated_dst_hour():
+    old_tz, real_time = os.environ.get("TZ"), delivery.time.time
+    os.environ["TZ"] = "Europe/Ljubljana"
+    time.tzset()
+    try:
+        first = datetime(2026, 10, 25, 2, 30).timestamp()  # 02:30 CEST; 02:30 CET is 3600 s later
+        delivery.time.time = lambda: first + 3600 + 5  # just after 02:30 CET
+        assert delivery._local_ts(b"2026/10/25 02:30:00") == first + 3600
+        delivery.time.time = lambda: first + 5  # still the first pass
+        assert delivery._local_ts(b"2026/10/25 02:30:00") == first
+        assert delivery._local_ts(b"2026/10/24 12:00:00") == datetime(2026, 10, 24, 12).timestamp()
+    finally:
+        delivery.time.time = real_time
+        if old_tz is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = old_tz
+        time.tzset()
 
 
 def test_content_free_ping():

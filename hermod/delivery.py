@@ -159,8 +159,11 @@ def _tail(path: Path, max_bytes: int) -> tuple[bytes, int, bool]:
 
 
 def _local_ts(stamp: bytes) -> float:
-    """ntfy logs local time, with no zone."""
-    return datetime.strptime(stamp.decode("ascii"), "%Y/%m/%d %H:%M:%S").timestamp()
+    """ntfy logs local time, with no zone. In the hour repeated when DST ends, take the second pass unless it is
+    still in the future: a fresh line must not read an hour stale (one line from the first pass may read fresh)."""
+    naive = datetime.strptime(stamp.decode("ascii"), "%Y/%m/%d %H:%M:%S")
+    late = naive.replace(fold=1).timestamp()
+    return late if late <= time.time() + 60 else naive.timestamp()
 
 
 def _newest_stats(path: Path) -> tuple[float, int] | None:
