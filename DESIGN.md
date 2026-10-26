@@ -123,3 +123,14 @@ Anze reads in Mattermost before the poll never becomes a signal (`mattermost.unr
 After merging: restart `com.herald.server` (`bin/install-launchd`) so `/task` exists.
 
 Only a message that names Anze makes a task (`tasks.addressed`, enforced in Hermod): a 1:1 DM, a mention, or mail with his address in To (`meta.to`). Group messages, Cc and list mail get none.
+
+## Messages feed for Mimir's second brain (2026-10-26)
+
+`jobs/messages-feed.py` (`herald messages-feed`, scheduled by Jarvis through `bin/herald-job.sh`) writes `state/messages-feed.json`
+for Mimir's ingest to read. Read-only: Mattermost through the GET-only client (every DM and group message, plus posts that
+@mention Anze in any channel not in `mattermost_exclude`), Gmail through a readonly IMAP select and `BODY.PEEK` (all of INBOX
+for 30 days, read or not). Unlike the poller it ignores the unread state: the feed is a record, not a to-do list. The file
+accumulates: each run fetches from one hour before the last run, merges by id and drops anything older than 30 days; a failed
+source exits 1 and keeps the last good file. Mail is flagged `bulk` (List-Unsubscribe, List-Id, Precedence, Auto-Submitted,
+no-reply sender) and Mattermost posts `bot`; Mimir skips both before any model call. Contract: see the job's docstring.
+Not run against the live accounts when it was written (only the pure parts are tested); the first scheduled run is the live check.

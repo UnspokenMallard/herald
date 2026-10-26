@@ -774,6 +774,35 @@ def test_mimir_down_loses_nothing():
     wipe_signals()
 
 
+def test_messages_feed_keeps_dms_and_mentions_only_and_merges():
+    import runpy
+    job = runpy.run_path(str(ROOT / "jobs" / "messages-feed.py"), run_name="job")
+    posts = {"p1": {"id": "p1", "user_id": "u2", "create_at": 2000, "message": "dm hello"},
+             "p2": {"id": "p2", "user_id": "u2", "create_at": 3000, "message": "hi @anze look", "props": {}},
+             "p3": {"id": "p3", "user_id": "u2", "create_at": 4000, "message": "chatter"}}
+
+    class MM:
+        def get(self, path):
+            if path == "/users/me":
+                return {"id": "u1", "username": "anze", "notify_props": {}}
+            if path == "/users/me/teams":
+                return [{"id": "t", "name": "er"}]
+            if path.endswith("/channels"):
+                return [{"id": "d", "type": "D", "name": "u1__u2", "last_post_at": 9000},
+                        {"id": "o", "type": "O", "name": "dev", "display_name": "Dev", "team_id": "t", "last_post_at": 9000},
+                        {"id": "x", "type": "O", "name": "socials-alerts-critical", "team_id": "t", "last_post_at": 9000}]
+            return {"posts": {"d": {"p1": posts["p1"]}, "o": {"p2": posts["p2"], "p3": posts["p3"]}}[path.split("/")[2]]}
+
+        def post(self, path, body):
+            return [{"id": "u2", "username": "bob", "is_bot": False}]
+
+    rows = job["fetch_mattermost"](MM(), 1000, ["socials-alerts-critical"])
+    assert [(r["id"], r["channel"], r["mention"]) for r in rows] == [("p1", "dm:@bob", False), ("p2", "Dev", True)]
+    old = [{"source": "mail", "id": "m", "ts": 0.5}, {"source": "mail", "id": "m2", "ts": 5000.0}]
+    merged = job["merge"](old, rows, 1.0)
+    assert [m["id"] for m in merged] == ["p1", "p2", "m2"]  # m is older than the floor
+
+
 if __name__ == "__main__":
     failed = 0
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
