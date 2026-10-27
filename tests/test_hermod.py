@@ -123,6 +123,44 @@ def test_named_lines():
     assert ping.is_named_ping(pathy) and "/" not in pathy and "~" not in pathy and "fix: " + ping._FIXED_HINT in pathy
 
 
+def test_publish_failures_and_status():
+    import socket
+    import urllib.error
+
+    def raising(exc):
+        def urlopen(request, timeout=10):
+            raise exc
+        return urlopen
+
+    cases = [(urllib.error.HTTPError("http://x", 500, "boom", {}, None), "delivery failed: HTTPError"),
+             (urllib.error.URLError("refused"), "delivery failed: URLError"),
+             (socket.timeout("timed out"), "delivery failed: TimeoutError")]
+    real, body = ping.urllib.request.urlopen, "Jarvis here. Nothing is waiting for you."
+    try:
+        for n, (exc, reason) in enumerate(cases, 1):
+            ping.urllib.request.urlopen = raising(exc)
+            assert ping.send(body, CFG) == {"delivered": False, "reason": reason}
+            assert ping.STATUS["failures_since_ok"] == n and ping.STATUS["last_error"] == reason
+        ping.urllib.request.urlopen = fake_net([])
+        assert ping.send(body, CFG)["delivered"]
+        assert ping.STATUS["failures_since_ok"] == 0 and ping.STATUS["last_ping_ok_at"]
+    finally:
+        ping.urllib.request.urlopen = real
+
+
+def test_health_reports_last_ping():
+    import app
+    last = app.health(None)["last_ping"]
+    assert set(last) == {"last_ping_ok_at", "last_error", "failures_since_ok"}
+
+
+def test_kind_of():
+    refused = {"kind": "counts", "counts": {"review": 0, "inbound": 0, "incidents": 0, "refused": 2}}
+    assert ping.kind_of(refused) == "counts"
+    assert ping.kind_of({"kind": "counts", "counts": {"incidents": 1}}) == "incident"
+    assert ping.kind_of({"kind": "hud", "waiting": 0, "open": 0}) == "hud-done"
+
+
 def test_compose_payload_and_send():
     body = ping.compose_payload({"kind": "counts", "counts": {"review": 0, "inbound": 1, "incidents": 0, "refused": 0},
                                  "inbound": [{"title": "x"}], "lead": "2 commands done"})
