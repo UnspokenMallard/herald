@@ -14,6 +14,7 @@ import json
 import runpy
 import sys
 import time
+import urllib.request
 from pathlib import Path
 
 from . import commands, delivery, inbound, ping, reports, store
@@ -35,7 +36,12 @@ def _main(argv: list[str] | None) -> int:
     cmd, rest = (argv[0], argv[1:]) if argv else ("health", [])
     if cmd == "health":
         cfg = store.load_config()
-        print(json.dumps({"outbox": mr.pending(store.SOURCE), "ping": ping.cfg(cfg)["enabled"], "reports": reports.cfg(cfg)["enabled"],
+        try:  # the ping outcome lives in the running service's memory
+            with urllib.request.urlopen("http://127.0.0.1:3026/health", timeout=3) as resp:
+                last_ping = json.load(resp).get("last_ping")
+        except (OSError, ValueError):
+            last_ping = "service not reachable"
+        print(json.dumps({"last_ping": last_ping, "outbox": mr.pending(store.SOURCE), "ping": ping.cfg(cfg)["enabled"], "reports": reports.cfg(cfg)["enabled"],
                           "commands": commands.cfg(cfg)["enabled"], "inbound": inbound.cfg(cfg)["enabled"],
                           "ntfy_token": bool(ping.token())}, indent=2))
         return 0

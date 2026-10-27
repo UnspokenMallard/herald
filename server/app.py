@@ -128,7 +128,7 @@ def health(_r) -> dict:
             "channels": {"ping": ping.cfg(cfg)["enabled"], "reports": reports.cfg(cfg)["enabled"],
                          "briefing": briefing.cfg(cfg)["enabled"], "commands": commands.cfg(cfg)["enabled"],
                          "inbound": inbound.cfg(cfg)["enabled"]},
-            "token": bool(ping.token())}
+            "token": bool(ping.token()), "last_ping": ping.STATUS}
 
 
 routes = [
@@ -154,5 +154,8 @@ routes = [
 app = Starlette(routes=routes, middleware=[Middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])])
 
 if __name__ == "__main__":
+    import logging
     import uvicorn
-    uvicorn.run(app, host=HOST, port=PORT, log_level="warning")
+    # Dated lines in server.log; log_config=None lets uvicorn's own loggers use this format too.
+    logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    uvicorn.run(app, host=HOST, port=PORT, log_level="warning", log_config=None)

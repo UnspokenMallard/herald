@@ -64,6 +64,7 @@ from __future__ import annotations
 import json
 import random
 import re
+import time
 import urllib.error
 import urllib.request
 from typing import Any, Mapping
@@ -420,6 +421,19 @@ def send(text: str, config: Mapping[str, Any] | None = None, incident_id: int | 
     return _publish(settings, text, buttons(settings, incident_id, retry_triage), kind=kind)
 
 
+# The last delivery outcome, for /health and `herald health`; kept in memory, so a restart resets it.
+STATUS: dict[str, Any] = {"last_ping_ok_at": None, "last_error": None, "failures_since_ok": 0}
+
+
+def _outcome(kind: str, ok: bool, reason: str) -> dict:
+    if ok:
+        STATUS.update(last_ping_ok_at=time.time(), failures_since_ok=0)
+    else:
+        STATUS.update(last_error=reason, failures_since_ok=STATUS["failures_since_ok"] + 1)
+        log.warning("ping: %s delivery failed: %s", kind or "ping", reason)
+    return {"delivered": ok, "reason": "" if ok else reason}
+
+
 def _publish(settings: Mapping[str, Any], text: str, actions: str = "",
              extra: Mapping[str, str] | None = None, kind: str = "") -> dict:
     request = urllib.request.Request(
@@ -437,11 +451,9 @@ def _publish(settings: Mapping[str, Any], text: str, actions: str = "",
         request.add_header("Actions", actions)
     try:
         with urllib.request.urlopen(request, timeout=int(settings["timeout_s"])) as resp:
-            ok = 200 <= resp.status < 300
-            return {"delivered": ok, "reason": "" if ok else f"ntfy answered HTTP {resp.status}"}
+            return _outcome(kind, 200 <= resp.status < 300, f"ntfy answered HTTP {resp.status}")
     except (urllib.error.URLError, OSError, ValueError) as exc:
-        log.debug("ping: delivery failed: %s", exc)
-        return {"delivered": False, "reason": f"delivery failed: {type(exc).__name__}"}
+        return _outcome(kind, False, f"delivery failed: {type(exc).__name__}")
 
 
 # The HUD's ping (2026-10-11, scripts/hud-ping.py in Jarvis): a session waits on Anze, or finished.
