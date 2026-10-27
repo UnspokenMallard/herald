@@ -118,6 +118,9 @@ def test_named_lines():
     inc = ping.compose_named({"review": 0, "inbound": 0, "incidents": 1}, [], [],
                              incident_items=[{"kind": "loop-crash", "members": ["loop-crash:a@b"], "hint": "restart `x`"}])
     assert ping.is_named_ping(inc) and "@" not in inc and "`" not in inc
+    pathy = ping.compose_named({"review": 0, "inbound": 0, "incidents": 1}, [], [], incident_items=[
+        {"kind": "loop-crash", "members": ["loop-crash:a"], "hint": "grep -F x ~/.jarvis/logs/alerts.log"}])
+    assert ping.is_named_ping(pathy) and "/" not in pathy and "~" not in pathy and "fix: " + ping._FIXED_HINT in pathy
 
 
 def test_compose_payload_and_send():

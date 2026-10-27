@@ -245,6 +245,10 @@ def review_lines(items: list[Mapping[str, Any]]) -> list[str]:
 # then the first step of its playbook (Jarvis's daemon/playbook.py), fixed text written there.
 
 
+_PATHISH = re.compile(r"[/~]|://")  # a path or a URL in a hint is a command line; the phone gets a fixed hint instead
+_FIXED_HINT = "see the Jarvis HUD for the steps"
+
+
 def incident_lines(items: list[Mapping[str, Any]]) -> list[str]:
     lines: list[str] = []
     for item in items[:_NAMED_MAX]:
@@ -252,7 +256,8 @@ def incident_lines(items: list[Mapping[str, Any]]) -> list[str]:
         names = [str(m).split(":", 1)[1].replace("@", " on ") for m in item.get("members") or [] if ":" in str(m)]
         label = f"{item.get('kind')} {', '.join(names)}".strip() if names else str(item.get("kind") or "")
         lines += _bullets([label], limit=_NAMED_CHARS + 20)
-        lines += _bullets(["fix: " + str(item.get("hint") or "").replace("`", "")], limit=_NAMED_CHARS + 20)
+        hint = str(item.get("hint") or "").replace("`", "")
+        lines += _bullets(["fix: " + (_FIXED_HINT if _PATHISH.search(hint) else hint)], limit=_NAMED_CHARS + 20)
     if len(items) > _NAMED_MAX:
         lines.append(f"and {len(items) - _NAMED_MAX} more")
     return lines
