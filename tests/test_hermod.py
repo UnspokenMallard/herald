@@ -135,7 +135,8 @@ def test_publish_failures_and_status():
     cases = [(urllib.error.HTTPError("http://x", 500, "boom", {}, None), "delivery failed: HTTPError"),
              (urllib.error.URLError("refused"), "delivery failed: URLError"),
              (socket.timeout("timed out"), "delivery failed: TimeoutError")]
-    real, body = ping.urllib.request.urlopen, "Jarvis here. Nothing is waiting for you."
+    real, body, wait = ping.urllib.request.urlopen, "Jarvis here. Nothing is waiting for you.", ping.RETRY_WAIT_S
+    ping.RETRY_WAIT_S = 0
     try:
         for n, (exc, reason) in enumerate(cases, 1):
             ping.urllib.request.urlopen = raising(exc)
@@ -144,8 +145,24 @@ def test_publish_failures_and_status():
         ping.urllib.request.urlopen = fake_net([])
         assert ping.send(body, CFG)["delivered"]
         assert ping.STATUS["failures_since_ok"] == 0 and ping.STATUS["last_ping_ok_at"]
+        calls = []
+
+        def flaky(request, timeout=10):  # the first try drops, the retry gets through
+            calls.append(1)
+            if len(calls) == 1:
+                raise urllib.error.URLError("refused")
+            return _Resp()
+        ping.urllib.request.urlopen = flaky
+        assert ping.send(body, CFG)["delivered"] and len(calls) == 2
+        calls.clear()
+
+        def forbidden(request, timeout=10):
+            calls.append(1)
+            raise urllib.error.HTTPError("http://x", 403, "no", {}, None)
+        ping.urllib.request.urlopen = forbidden
+        assert not ping.send(body, CFG)["delivered"] and len(calls) == 1  # a 4xx is not retried
     finally:
-        ping.urllib.request.urlopen = real
+        ping.urllib.request.urlopen, ping.RETRY_WAIT_S = real, wait
 
 
 def test_health_reports_last_ping():

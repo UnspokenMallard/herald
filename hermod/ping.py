@@ -390,6 +390,7 @@ def check(text: str) -> bool:
 # ntfy headers per ping kind (2026-10-22). Priority 2 for routine counts, 4 for incidents and health,
 # 3 otherwise. X-Sequence-ID only where a new ping replaces the old one in place: counts, never incidents.
 _PRIORITY = {"counts": 2, "hud-done": 2, "incident": 4, "health": 4}
+RETRY_WAIT_S = 2.0
 _SEQUENCE = {"counts": "herald-counts"}
 
 
@@ -449,11 +450,15 @@ def _publish(settings: Mapping[str, Any], text: str, actions: str = "",
         request.add_header("Authorization", f"Bearer {bearer}")
     if actions:
         request.add_header("Actions", actions)
-    try:
-        with urllib.request.urlopen(request, timeout=int(settings["timeout_s"])) as resp:
-            return _outcome(kind, 200 <= resp.status < 300, f"ntfy answered HTTP {resp.status}")
-    except (urllib.error.URLError, OSError, ValueError) as exc:
-        return _outcome(kind, False, f"delivery failed: {type(exc).__name__}")
+    for attempt in (1, 2):
+        try:
+            with urllib.request.urlopen(request, timeout=int(settings["timeout_s"])) as resp:
+                return _outcome(kind, 200 <= resp.status < 300, f"ntfy answered HTTP {resp.status}")
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            # One retry for a dropped connection or a 5xx (audit 2026-10-27); a 4xx or a bad URL would fail again.
+            if attempt == 2 or isinstance(exc, ValueError) or getattr(exc, "code", 500) < 500:
+                return _outcome(kind, False, f"delivery failed: {type(exc).__name__}")
+            time.sleep(RETRY_WAIT_S)
 
 
 # The HUD's ping (2026-10-11, scripts/hud-ping.py in Jarvis): a session waits on Anze, or finished.
