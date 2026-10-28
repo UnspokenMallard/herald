@@ -248,6 +248,30 @@ def test_buttons():
     assert ping.buttons({"buttons_url": ""}) == ""
 
 
+def test_delivery_test_ping():
+    (TMP / "secrets").mkdir(exist_ok=True)
+    (TMP / "secrets" / "ntfy.json").write_text(json.dumps({"token": "t0", "button_token": "b0"}))
+    cfg = {"ping": {**CFG["ping"], "buttons_url": "https://n.example/cmd"}}
+    assert ping.is_content_free(ping.compose_delivery_test()) and "ack" in commands.VERBS
+    assert commands.parse("ack 1761650000") == ("ack", ["1761650000"])
+    sent: list = []
+    real = ping.urllib.request.urlopen
+    ping.urllib.request.urlopen = fake_net(sent)
+    try:
+        assert ping.send_delivery_test("1761650000", cfg)["delivered"]
+        _url, headers, body = sent[0]
+        assert body == ping.compose_delivery_test() and headers.get("Priority") == "4"
+        assert headers["Actions"] == ("http, Got it, https://n.example/cmd, method=POST, "
+                                      "headers.Authorization=Bearer b0, body=ack 1761650000, clear=true")
+        for bad in ("", "12x", "1" * 13, "../x"):
+            assert ping.send_delivery_test(bad, cfg)["reason"] == "nonce must be 1-12 digits"
+        assert len(sent) == 1
+        no_button = {"ping": {**CFG["ping"], "buttons_url": ""}}
+        assert "no ack button" in ping.send_delivery_test("1", no_button)["reason"] and len(sent) == 1
+    finally:
+        ping.urllib.request.urlopen = real
+
+
 def test_hud_ping():
     text = ping.compose_hud(1, 0, 0, ["waiting|er-web|Fix login|How to route those?", "done|er-api|Tests|"])
     assert text.split("\n")[0].endswith("a task is waiting for you.")

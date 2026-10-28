@@ -82,6 +82,10 @@ def do_ping_persona(b: dict) -> dict:
     return {**ping.send_persona(text, str(b.get("click") or "")), "body": text}
 
 
+def do_ping_delivery_test(b: dict) -> dict:
+    return ping.send_delivery_test(str(b.get("nonce") or ""))
+
+
 def do_report(b: dict) -> dict:
     return reports.push(str(b["title"]), str(b.get("text") or ""), b.get("spoken"), click=str(b.get("click") or ""))
 
@@ -139,6 +143,7 @@ routes = [
     Route("/ping", sync_post(do_ping), methods=["POST"]),
     Route("/ping/hud", sync_post(do_ping_hud), methods=["POST"]),
     Route("/ping/persona", sync_post(do_ping_persona), methods=["POST"]),
+    Route("/ping/delivery-test", sync_post(do_ping_delivery_test), methods=["POST"]),
     Route("/report", sync_post(do_report), methods=["POST"]),
     Route("/briefing", sync_post(do_briefing), methods=["POST"]),
     Route("/draft", post(do_draft), methods=["POST"]),

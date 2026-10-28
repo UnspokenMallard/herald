@@ -43,7 +43,8 @@ from ._mimir import records as mr
 from .store import log
 
 # The complete set. Adding to it is a security decision, not a convenience.
-VERBS = ("status", "resolve", "snooze", "digest", "retry-triage", "run-deprehearsal")
+# `ack <number>` answers the daily delivery test push (Jarvis records it, nothing else happens).
+VERBS = ("status", "resolve", "snooze", "digest", "retry-triage", "run-deprehearsal", "ack")
 
 # Never accepted. Not a filter the parser consults -- an unknown verb is already refused -- but a
 # tripwire on this file's intent: adding one of these means deleting the list that says not to.

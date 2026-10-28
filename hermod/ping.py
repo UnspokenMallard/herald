@@ -108,6 +108,8 @@ _WORDS = {
     "quick", "update", "from", "heads", "up", "checking", "in", "hello", "it", "hi",
     # Hermod, Hermod's display name (2026-10-23): a fixed literal, like "jarvis".
     "hermod",
+    # The daily delivery test (2026-10-28): one fixed sentence, `compose_delivery_test()`.
+    "delivery", "test", "tap", "to", "confirm",
 }
 
 # How Jarvis opens a message (Anze, 2026-10-05: "add some minor randomness").
@@ -382,6 +384,33 @@ def buttons(settings: Mapping[str, Any], incident_id: int | None = None,
                      f"body={body}, clear=true" for label, body in acts)
 
 
+def compose_delivery_test() -> str:
+    return "Hermod here, delivery test: tap ok to confirm."
+
+
+def send_delivery_test(nonce: str, config: Mapping[str, Any] | None = None) -> dict:
+    """The daily end-to-end probe: a fixed sentence and one button that publishes `ack <nonce>`.
+
+    Unlike every other ping the button is not optional: without it nobody can confirm, so a missing
+    buttons_url or token is a failed send, not a quiet one. `nonce` is digits only because the phone's
+    reply is parsed as a command and the nonce becomes a file name on the other side.
+    """
+    settings = cfg(config)
+    if not settings["enabled"] or not settings["url"]:
+        return {"delivered": False, "reason": "ping disabled"}
+    if not nonce.isdigit() or len(nonce) > 12:
+        return {"delivered": False, "reason": "nonce must be 1-12 digits"}
+    url, tok = str(settings.get("buttons_url") or ""), button_token()
+    if not url or not tok:
+        return {"delivered": False, "reason": "no ack button: buttons_url or the button token is missing"}
+    text = compose_delivery_test()
+    if not is_content_free(text):
+        return {"delivered": False, "reason": "not content-free"}
+    action = (f"http, Got it, {url}, method=POST, headers.Authorization=Bearer {tok}, "
+              f"body=ack {nonce}, clear=true")
+    return _publish(settings, text, action, kind="delivery-test")
+
+
 def check(text: str) -> bool:
     """Whether a finished body is one of the three shapes a ping may have."""
     return is_content_free(text) or is_task_ping(text) or is_named_ping(text)
@@ -389,7 +418,7 @@ def check(text: str) -> bool:
 
 # ntfy headers per ping kind (2026-10-22). Priority 2 for routine counts, 4 for incidents and health,
 # 3 otherwise. X-Sequence-ID only where a new ping replaces the old one in place: counts, never incidents.
-_PRIORITY = {"counts": 2, "hud-done": 2, "incident": 4, "health": 4}
+_PRIORITY = {"counts": 2, "hud-done": 2, "incident": 4, "health": 4, "delivery-test": 4}
 RETRY_WAIT_S = 2.0
 _SEQUENCE = {"counts": "herald-counts"}
 
